@@ -27,6 +27,7 @@ from .m_nucleic import (
     M_RUMER_OCTET_I_STEMS,
     M_RUMER_OCTET_II_STEMS,
     M_CODON_TO_CLASS_21,
+    M_CLASS_21_TO_CANONICAL_CODON,
     MDuplexLatticeState,
     MIntronSplicingSpan,
     m_complement_base,
@@ -34,6 +35,7 @@ from .m_nucleic import (
     m_rumer_transform_stem,
     m_watson_crick_hbond_quanta,
     m_translate_codons,
+    m_reverse_translate_classes_to_z4,
     m_build_duplex,
     m_splice_pre_mrna,
     m_nucleosome_accessibility_profile,
@@ -49,6 +51,7 @@ from .m_polypeptide import (
     MCatalyticTriadLock,
     MAtpWalkerLock,
     MTransmembraneHelixLock,
+    MProteinSynthesisSpec,
     m_fold_chain_cotranslational,
     m_scan_c2h2_locks,
     m_scan_trp_pin_locks,
@@ -58,6 +61,7 @@ from .m_polypeptide import (
     m_scan_transmembrane_rods,
     m_score_ig_lock_pair_quanta,
     m_score_tf_dna_quanta,
+    m_synthesize_protein_for_spec,
 )
 from .m_tissue import (
     MGeneLocus,
@@ -69,6 +73,7 @@ from .m_tissue import (
     MTissueTopologySnapshot,
     MTissueMorphology,
     MChromosomeScanResult,
+    MSynthesizedGeneProduct,
     m_express_locus,
     m_compute_regulatory_quanta_matrix,
     m_step_fcc_morphogen_automaton,
@@ -80,6 +85,7 @@ from .m_tissue import (
     m_grow_hex_tube,
     m_grow_laminar_column_6,
     m_scan_chromosome_de_novo,
+    m_synthesize_gene_and_protein,
 )
 from .t_readout import (
     T_BASE_TO_Z4,
@@ -98,6 +104,7 @@ from .t_readout import (
     format_polypeptide_xray_table,
     format_tissue_xray_table,
     scan_fasta_and_format_xray,
+    synthesize_gene_and_protein_xray,
 )
 
 __all__ = [

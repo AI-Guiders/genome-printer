@@ -304,3 +304,45 @@ def m_nucleosome_accessibility_profile(
                 open_flags[k] = 1
 
     return tuple(open_flags)
+
+
+# Canonical 3-bond-enriched, frame-locked inverse table Z_21 -> Z_4^3:
+# Every coding triplet (classes 0..19) ends in b_3 in {1, 3} (C or G), preventing out-of-frame ATG or stops.
+M_CLASS_21_TO_CANONICAL_CODON: tuple[tuple[int, int, int], ...] = (
+    (1, 0, 1),  # 0: Leu (CTC)
+    (0, 1, 1),  # 1: Ser (TCC)
+    (1, 3, 1),  # 2: Arg (CGC)
+    (3, 1, 1),  # 3: Ala (GCC)
+    (3, 0, 1),  # 4: Val (GTC)
+    (1, 1, 1),  # 5: Pro (CCC)
+    (3, 3, 1),  # 6: Gly (GGC)
+    (2, 1, 1),  # 7: Thr (ACC)
+    (0, 0, 1),  # 8: Phe (TTC)
+    (0, 2, 1),  # 9: Tyr (TAC)
+    (0, 3, 3),  # 10: Trp (TGG)
+    (0, 3, 1),  # 11: Cys (TGC)
+    (2, 0, 3),  # 12: Met (ATG)
+    (2, 0, 1),  # 13: Ile (ATC)
+    (1, 2, 1),  # 14: His (CAC)
+    (1, 2, 3),  # 15: Gln (CAG)
+    (2, 2, 1),  # 16: Asn (AAC)
+    (2, 2, 3),  # 17: Lys (AAG)
+    (3, 2, 1),  # 18: Asp (GAC)
+    (3, 2, 3),  # 19: Glu (GAG)
+    (0, 2, 2),  # 20: Stop (TAA)
+)
+
+
+def m_reverse_translate_classes_to_z4(
+    class_sequence_z21: tuple[int, ...] | list[int],
+    append_stop_20: bool = True,
+) -> tuple[int, ...]:
+    """Deterministically compile a Z_21 amino acid sequence into a frame-locked Z_4 coding DNA sequence."""
+    out: list[int] = []
+    for cls_id in class_sequence_z21:
+        b1, b2, b3 = M_CLASS_21_TO_CANONICAL_CODON[int(cls_id)]
+        out.extend((b1, b2, b3))
+    if append_stop_20 and (len(class_sequence_z21) == 0 or class_sequence_z21[-1] != 20):
+        b1, b2, b3 = M_CLASS_21_TO_CANONICAL_CODON[20]
+        out.extend((b1, b2, b3))
+    return tuple(out)

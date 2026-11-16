@@ -52,6 +52,7 @@ from genome_printer import (
     format_polypeptide_xray_table,
     format_tissue_xray_table,
     scan_fasta_and_format_xray,
+    synthesize_gene_and_protein_xray,
 )
 
 
@@ -299,3 +300,35 @@ def test_de_novo_fasta_scanner_and_four_former_blind_spots() -> None:
     # Locus 1 has no structural lock and is flagged as a blind spot
     assert 1 in scan.unannotated_lock_free_loci
     assert "DE NOVO FASTA -> M -> T(FASTA) X-RAY SCAN" in report
+
+
+def test_de_novo_protein_and_gene_synthesis_with_prescribed_properties() -> None:
+    """Verify inverse folding / de novo synthesis of a protein and coding gene with prescribed locks and stability."""
+    # Synthesize a multi-functional protein and gene required to:
+    #   1) Bind the 6-bp promoter address ("GCG", "TAT") via a tandem 2x C2H2 finger array (|N_12|=12 loops),
+    #   2) Bind the homeodomain core "TAAT" via a Trp-pin lock,
+    #   3) Catalyze proton-relay cleavage via a Ser-His-Asp triad (3 E_HB),
+    #   4) Couple ATP via a Walker P-loop motor (2 E_HB),
+    #   5) Anchor in the membrane via an 18-residue (|N_12|+|square|=18) transmembrane rod,
+    #   6) Present an Ig_donor (+1) synaptic lock with loop span N_HB = 63,
+    #   7) Achieve a folding stability of at least 90 E_HB quanta (~1875 kJ/mol).
+    synth_res, cert_str = synthesize_gene_and_protein_xray(
+        target_dna_triplets=("GCG", "TAT"),
+        target_homeodomain_core="TAAT",
+        require_catalytic_triad=True,
+        require_atp_walker_motor=True,
+        require_transmembrane_rod=True,
+        ig_synaptic_polarity=+1,
+        min_stability_quanta_ehb=90,
+    )
+
+    assert synth_res.all_constraints_satisfied is True
+    assert synth_res.verified_expression.folded_chain.total_quanta_ehb >= 90
+    assert synth_res.dna_binding_quanta_verified >= 10
+    assert len(synth_res.verified_expression.c2h2_locks) >= 2
+    assert len(synth_res.verified_expression.trp_pin_locks) >= 1
+    assert len(synth_res.verified_expression.catalytic_triads) >= 1
+    assert len(synth_res.verified_expression.atp_walker_locks) >= 1
+    assert len(synth_res.verified_expression.transmembrane_rods) >= 1
+    assert len(synth_res.verified_expression.ig_locks) >= 1
+    assert "VERIFIED=True" in cert_str

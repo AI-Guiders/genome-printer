@@ -21,8 +21,14 @@ from .m_chemistry import (
     m_compute_hbond_phase_ratios,
 )
 from .m_nucleic import MDuplexLatticeState
-from .m_polypeptide import MFoldedChain
-from .m_tissue import MTissueMorphology, MChromosomeScanResult, m_scan_chromosome_de_novo
+from .m_polypeptide import MFoldedChain, MProteinSynthesisSpec
+from .m_tissue import (
+    MTissueMorphology,
+    MChromosomeScanResult,
+    MSynthesizedGeneProduct,
+    m_scan_chromosome_de_novo,
+    m_synthesize_gene_and_protein,
+)
 
 
 # T-layer IUPAC base codec: b in Z_4 (0, 1, 2, 3) <-> ('T'/'U', 'C', 'A', 'G')
@@ -294,3 +300,58 @@ def scan_fasta_and_format_xray(
             f"Betti=({s.betti_0},{s.betti_1_open_channels},{s.betti_2_closed_cavities}), E_Ig={s.ig_synapses_count}"
         )
     return scan, "\n".join(lines)
+
+
+def synthesize_gene_and_protein_xray(
+    target_dna_triplets: tuple[str, ...] = (),
+    target_homeodomain_core: str = "",
+    require_catalytic_triad: bool = False,
+    require_atp_walker_motor: bool = False,
+    require_transmembrane_rod: bool = False,
+    ig_synaptic_polarity: int = 0,
+    min_stability_quanta_ehb: int = 12,
+    proj: TSIBridgeProjector = T_PROJECTOR,
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[MSynthesizedGeneProduct, str]:
+    """Execute T(Design Spec) -> M(Synthesis Spec) -> M(Synthesize Z_21 & Z_4 + O(L) Verify) -> T(FASTA + X-Ray)."""
+    triplets_z4: list[tuple[int, int, int]] = []
+    for t_str in target_dna_triplets:
+        z4 = encode_dna_to_z4(t_str)
+        if len(z4) != 3:
+            raise ValueError(f"Each C2H2 DNA target must be 3 bp, got {t_str!r}")
+        triplets_z4.append((z4[0], z4[1], z4[2]))
+
+    core_z4 = encode_dna_to_z4(target_homeodomain_core) if target_homeodomain_core else ()
+    spec = MProteinSynthesisSpec(
+        target_c2h2_dna_triplets_z4=tuple(triplets_z4),
+        target_trp_pin_core_z4=core_z4,
+        require_catalytic_triad=1 if require_catalytic_triad else 0,
+        require_atp_walker_motor=1 if require_atp_walker_motor else 0,
+        require_transmembrane_rod=1 if require_transmembrane_rod else 0,
+        ig_synaptic_polarity=ig_synaptic_polarity,
+        min_stability_quanta_ehb=min_stability_quanta_ehb,
+    )
+    res = m_synthesize_gene_and_protein(spec, c=c)
+    prot_str = decode_z21_to_protein(res.synthesized_class_seq_z21)
+    cds_dna_str = decode_z4_to_dna(res.synthesized_coding_dna_z4)
+    prom_dna_str = decode_z4_to_dna(res.synthesized_promoter_z4)
+    f = res.verified_expression.folded_chain
+    e_kj = -proj.quanta_ehb_to_kj_mol(f.total_quanta_ehb, c=c)
+    bind_kj = -proj.quanta_ehb_to_kj_mol(res.dna_binding_quanta_verified, c=c)
+
+    lines = [
+        f"=== DE NOVO M-LAYER PROTEIN & GENE SYNTHESIS CERTIFICATE (VERIFIED={res.all_constraints_satisfied}) ===",
+        f"Synthesized Protein (L={len(prot_str)} aa): {prot_str}",
+        f"Synthesized Coding Gene ({len(cds_dna_str)} bp): {cds_dna_str}",
+        f"Target Promoter ({len(prom_dna_str)} bp): {prom_dna_str}",
+        f"Folded Stability: -{f.total_quanta_ehb} E_HB ({e_kj:.2f} kJ/mol) [target >= {min_stability_quanta_ehb} E_HB] | "
+        f"FCC_self_avoid={len(set(f.fcc_lattice_nodes)) == len(f.fcc_lattice_nodes)} | ops={f.elementary_ops_count}",
+        f"Verified Locks: C2H2={[decode_z4_to_dna(lk.target_bases_z4) for lk in res.verified_expression.c2h2_locks]} | "
+        f"TrpPin={[decode_z4_to_dna(lk.target_core_z4) for lk in res.verified_expression.trp_pin_locks]} | "
+        f"CatalyticTriad={len(res.verified_expression.catalytic_triads)} | "
+        f"WalkerATP={len(res.verified_expression.atp_walker_locks)} | "
+        f"TM18={len(res.verified_expression.transmembrane_rods)} | "
+        f"Ig(N_HB=63)={len(res.verified_expression.ig_locks)}",
+        f"Verified Promoter Binding Affinity: -{res.dna_binding_quanta_verified} E_HB ({bind_kj:.2f} kJ/mol)",
+    ]
+    return res, "\n".join(lines)

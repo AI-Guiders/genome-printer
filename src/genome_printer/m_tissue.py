@@ -23,6 +23,7 @@ from .m_nucleic import (
     MIntronSplicingSpan,
     m_build_duplex,
     m_translate_codons,
+    m_reverse_translate_classes_to_z4,
     m_splice_pre_mrna,
     m_nucleosome_accessibility_profile,
 )
@@ -34,6 +35,7 @@ from .m_polypeptide import (
     MCatalyticTriadLock,
     MAtpWalkerLock,
     MTransmembraneHelixLock,
+    MProteinSynthesisSpec,
     m_fold_chain_cotranslational,
     m_scan_c2h2_locks,
     m_scan_trp_pin_locks,
@@ -43,6 +45,7 @@ from .m_polypeptide import (
     m_scan_transmembrane_rods,
     m_score_ig_lock_pair_quanta,
     m_score_tf_dna_quanta,
+    m_synthesize_protein_for_spec,
 )
 
 
@@ -115,23 +118,25 @@ def m_compute_regulatory_quanta_matrix(products: list[MExpressedLocus]) -> np.nd
     mat = np.zeros((n, n), dtype=np.int64)
     for i, reg in enumerate(products):
         for j, tgt in enumerate(products):
-            best_q = 0
+            total_q = 0
             prom_z4 = tgt.promoter_duplex.coding_bases
             for finger in reg.c2h2_locks:
                 readers = finger.reader_classes
+                best_finger_q = 0
                 for k in range(max(0, len(prom_z4) - 2)):
                     sub = prom_z4[k : k + 3]
                     q = m_score_tf_dna_quanta(readers, sub)
-                    if q > best_q:
-                        best_q = q
+                    if q > best_finger_q:
+                        best_finger_q = q
+                total_q += best_finger_q
             for pin in reg.trp_pin_locks:
                 core = pin.target_core_z4
                 clen = len(core)
                 for k in range(max(0, len(prom_z4) - clen + 1)):
                     if prom_z4[k : k + clen] == core:
-                        if clen > best_q:
-                            best_q = clen
-            mat[i, j] = best_q
+                        total_q += clen
+                        break
+            mat[i, j] = total_q
     return mat
 
 
@@ -843,4 +848,88 @@ def m_scan_chromosome_de_novo(
         orphan_promoter_positions=tuple(orphan_pos),
         intergenic_dark_spans=tuple(dark_spans),
         autonomous_tissue=auto_morph,
+    )
+
+
+@dataclass(frozen=True)
+class MSynthesizedGeneProduct:
+    """M-layer result of de novo protein and gene synthesis with forward O(L) self-verification."""
+
+    spec: MProteinSynthesisSpec
+    synthesized_class_seq_z21: tuple[int, ...]
+    synthesized_coding_dna_z4: tuple[int, ...]
+    synthesized_promoter_z4: tuple[int, ...]
+    verified_expression: MExpressedLocus
+    dna_binding_quanta_verified: int
+    all_constraints_satisfied: bool
+
+
+def m_synthesize_gene_and_protein(
+    spec: MProteinSynthesisSpec,
+    locus_id: int = 0,
+    c: MCarrierConstants = M_CARRIER,
+) -> MSynthesizedGeneProduct:
+    """Synthesize a Z_21 protein and frame-locked Z_4 coding gene from target properties and self-verify on M."""
+    seq_z21 = m_synthesize_protein_for_spec(spec, c=c)
+    coding_z4 = m_reverse_translate_classes_to_z4(seq_z21, append_stop_20=True)
+
+    # Construct matching 3-bond-clamped open promoter containing the target DNA binding sites
+    prom: list[int] = [3, 1, 3, 1, 3, 1]
+    for b0, b1, b2 in spec.target_c2h2_dna_triplets_z4:
+        prom.extend((int(b0) & 3, int(b1) & 3, int(b2) & 3))
+    if len(spec.target_trp_pin_core_z4) > 0:
+        prom.extend(int(b) & 3 for b in spec.target_trp_pin_core_z4)
+    prom.extend([3, 1, 3, 1, 3, 1])
+    promoter_z4 = tuple(prom)
+
+    # Forward self-verification: express the synthesized Z_4 locus through splicing, translation, and O(L) folding
+    locus = MGeneLocus(locus_id, promoter_z4, coding_z4)
+    expressed = m_express_locus(locus, enable_splicing=True, c=c)
+    q_mat = m_compute_regulatory_quanta_matrix([expressed])
+    dna_q = int(q_mat[0, 0])
+
+    # Verify every requested property on the folded product
+    f = expressed.folded_chain
+    frame_intact = expressed.class_sequence_z21 == seq_z21
+    self_avoiding = len(set(f.fcc_lattice_nodes)) == len(f.fcc_lattice_nodes)
+    stability_ok = f.total_quanta_ehb >= spec.min_stability_quanta_ehb
+    c2h2_targets = [lk.target_bases_z4 for lk in expressed.c2h2_locks]
+    c2h2_ok = all(trip in c2h2_targets for trip in spec.target_c2h2_dna_triplets_z4)
+    trp_ok = (
+        True
+        if len(spec.target_trp_pin_core_z4) == 0
+        else any(lk.target_core_z4 == spec.target_trp_pin_core_z4 for lk in expressed.trp_pin_locks)
+    )
+    triad_ok = True if spec.require_catalytic_triad == 0 else (len(expressed.catalytic_triads) >= 1)
+    walker_ok = True if spec.require_atp_walker_motor == 0 else (len(expressed.atp_walker_locks) >= 1)
+    tm_ok = True if spec.require_transmembrane_rod == 0 else (len(expressed.transmembrane_rods) >= 1)
+    ig_ok = (
+        True
+        if spec.ig_synaptic_polarity == 0
+        else any(
+            lk.polarity_role == spec.ig_synaptic_polarity and lk.loop_span == c.n_hb
+            for lk in expressed.ig_locks
+        )
+    )
+
+    all_ok = (
+        frame_intact
+        and self_avoiding
+        and stability_ok
+        and c2h2_ok
+        and trp_ok
+        and triad_ok
+        and walker_ok
+        and tm_ok
+        and ig_ok
+    )
+
+    return MSynthesizedGeneProduct(
+        spec=spec,
+        synthesized_class_seq_z21=seq_z21,
+        synthesized_coding_dna_z4=coding_z4,
+        synthesized_promoter_z4=promoter_z4,
+        verified_expression=expressed,
+        dna_binding_quanta_verified=dna_q,
+        all_constraints_satisfied=all_ok,
     )

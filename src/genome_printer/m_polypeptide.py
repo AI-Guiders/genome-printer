@@ -583,3 +583,111 @@ def m_scan_transmembrane_rods(
         else:
             i += 1
     return tuple(out)
+
+
+def _m_base_z4_to_reader_class(b_z4: int) -> int:
+    """Exact inverse of `_m_reader_class_to_base_z4`: map target Z_4 base to its Major Groove reader class."""
+    b = int(b_z4) & 3
+    if b == 3:
+        return 2  # Arg (+1, +1) reads G (3)
+    if b == 2:
+        return 15  # Gln (+1, -1) reads A (2)
+    if b == 1:
+        return 19  # Glu (-1, -1) reads C (1)
+    return 3  # Ala (0, 0) methyl-locks T/U (0)
+
+
+@dataclass(frozen=True)
+class MProteinSynthesisSpec:
+    """Pure M-layer specification of target physical and functional properties for de novo protein synthesis.
+
+    All fields are pure integers or tuples of integers in Z_4 / Z_21:
+      - `target_c2h2_dna_triplets_z4`: tuple of 3-base DNA words `(b0, b1, b2)` in Z_4^3 to bind via C2H2 fingers
+      - `target_trp_pin_core_z4`: optional `(0, 2, 2, 0)` [TAAT] or `(0, 3, 0, 0, 0)` [TGTTT] Major Groove core
+      - `require_catalytic_triad`: `1` to embed a proton-relay triad (`Ser_1 <-> His_14 <-> Asp_18`, `3 E_HB`)
+      - `require_atp_walker_motor`: `1` to embed an ATP-binding Walker P-loop (`6-x4-6-17-1`, `2 E_HB`)
+      - `require_transmembrane_rod`: `1` to embed an 18-residue (`|N_12| + |square| = 18`) nonpolar TM rod
+      - `ig_synaptic_polarity`: `+1` for `Ig_donor`, `-1` for `Ig_acceptor` (`N_HB = 63` loop), `0` for none
+      - `min_stability_quanta_ehb`: minimum required folding stability `|Delta G_fold|` in integer `E_HB` quanta
+    """
+
+    target_c2h2_dna_triplets_z4: tuple[tuple[int, int, int], ...] = ()
+    target_trp_pin_core_z4: tuple[int, ...] = ()
+    require_catalytic_triad: int = 0
+    require_atp_walker_motor: int = 0
+    require_transmembrane_rod: int = 0
+    ig_synaptic_polarity: int = 0
+    min_stability_quanta_ehb: int = 12
+
+
+def m_synthesize_protein_for_spec(
+    spec: MProteinSynthesisSpec,
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[int, ...]:
+    """Deterministically synthesize a Z_21 polypeptide sequence satisfying all M-layer lock and stability specs."""
+    seq: list[int] = [12, 3]  # N-terminal start Met_12 + Ala_3
+
+    # 1. Tandem C2H2 zinc-finger array for arbitrary target DNA 3-mers in Z_4^3
+    for b0, b1, b2 in spec.target_c2h2_dna_triplets_z4:
+        r0 = _m_base_z4_to_reader_class(b0)
+        r1 = _m_base_z4_to_reader_class(b1)
+        r2 = _m_base_z4_to_reader_class(b2)
+        # |N_12| = 12 loop with readers at offsets (11, 8, 5)
+        loop12 = [8, 3, 3, 3, 0, r2, 3, 3, r1, 3, 3, r0]
+        seq.extend([11, 3, 3, 11] + loop12 + [14, 3, 3, 3, 14, 7, 6])
+
+    # 2. Indole-pin (Trp_10) Major Groove homeodomain lock
+    if len(spec.target_trp_pin_core_z4) > 0:
+        if spec.target_trp_pin_core_z4 == (0, 2, 2, 0):
+            seq.extend([10, 8, 15, 16, 2, 2, 3])
+        else:
+            seq.extend([10, 8, 15, 3, 2, 2, 3])
+
+    # 3. Proton-relay catalytic triad (Ser_1 <-> His_14 <-> Asp_18)
+    if spec.require_catalytic_triad == 1:
+        seq.extend([1, 3, 0, 14, 3, 18, 3])
+
+    # 4. ATP-binding Walker P-loop clamp (6 - x4 - 6 - 17 - 1)
+    if spec.require_atp_walker_motor == 1:
+        seq.extend([6, 3, 3, 3, 3, 6, 17, 1, 3])
+
+    # 5. 18-residue (|N_12| + |square| = 18) nonpolar transmembrane rod
+    if spec.require_transmembrane_rod == 1:
+        seq.extend([0, 3, 4] * c.n_squares)
+
+    # 6. 63-residue (N_HB = 63) disulfide-locked Ig synaptic domain (+1 donor or -1 acceptor)
+    if spec.ig_synaptic_polarity in (+1, -1):
+        ig_block = [3] * 66
+        cb_rel = 1
+        cf_rel = cb_rel + c.n_hb  # 64 (span = 63)
+        w_rel = cb_rel + c.n_12  # 13
+        ig_block[cb_rel] = 11
+        ig_block[cf_rel] = 11
+        ig_block[w_rel] = 10
+        offsets = (
+            w_rel + c.d,
+            w_rel + c.d_in_sq,
+            w_rel + c.n_squares,
+            w_rel + c.n_12,
+            w_rel + c.n_phi,
+            cf_rel - c.n_12,
+            cf_rel - c.d_out_e,
+        )
+        if spec.ig_synaptic_polarity == +1:
+            ig_block[w_rel + 2] = 2  # Donor ridge
+            sig = (0, 2, 0, 19, 1, 16, 3)
+        else:
+            ig_block[w_rel + 4] = 18  # Acceptor groove
+            sig = (4, 18, 8, 2, 19, 9, 6)
+        for off_idx, cls_val in zip(offsets, sig):
+            ig_block[off_idx] = cls_val
+        seq.extend(ig_block)
+
+    # 7. Append alpha-helical salt-bridged turns (Ala_3 - Glu_19 - Leu_0 - Ala_3 - Lys_17)
+    #    until |Delta G_fold| >= min_stability_quanta_ehb
+    folded = m_fold_chain_cotranslational(seq, c=c)
+    while folded.total_quanta_ehb < spec.min_stability_quanta_ehb:
+        seq.extend([3, 19, 0, 3, 17])
+        folded = m_fold_chain_cotranslational(seq, c=c)
+
+    return tuple(seq)
