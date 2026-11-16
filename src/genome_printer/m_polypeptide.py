@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 import numpy as np
-from .m_carrier import M_CARRIER, MCarrierConstants
+from .m_carrier import M_CARRIER, MCarrierConstants, FCC_N12_VECTORS
 from .m_nucleic import M_MAJOR_GROOVE_SLOTS
 
 
@@ -77,12 +77,14 @@ class MBondRecord:
 
 @dataclass(frozen=True)
 class MFoldedChain:
-    """M-layer result of O(1)-per-residue co-translational folding on K_4 grooves."""
+    """M-layer result of O(1)-per-residue co-translational folding on K_4 grooves and FCC N12."""
 
     class_sequence: tuple[int, ...]
     k4_grooves: tuple[int, ...]  # 0, 1, or 2 per residue
     ca_xyz_a0: np.ndarray  # shape (L, 3) in Bohr units a_0
     ca_xyz_dh: np.ndarray  # shape (L, 3) in native lattice steps dh
+    fcc_lattice_nodes: tuple[tuple[int, int, int], ...]  # Self-avoiding integer FCC nodes (b(x) in {0,1})
+    steric_reroutes_count: int  # Number of Pauli steric collisions resolved onto open N_12 vertices
     bond_records: tuple[MBondRecord, ...]
     thiol_bridges: tuple[tuple[int, int], ...]
     total_quanta_ehb: int
@@ -241,11 +243,54 @@ def m_fold_chain_cotranslational(
     center = np.mean(ca_a0, axis=0) if n > 0 else np.zeros(3)
     rg_a0 = float(math.sqrt(np.mean(np.sum((ca_a0 - center) ** 2, axis=1)))) if n > 0 else 0.0
 
+    # Self-avoiding integer FCC N12 lattice walk with Pauli steric occupancy b(x) in {0, 1}
+    fcc_nodes: list[tuple[int, int, int]] = []
+    occupied_fcc: set[tuple[int, int, int]] = set()
+    reroutes = 0
+    cur_node = (0, 0, 0)
+    if n > 0:
+        fcc_nodes.append(cur_node)
+        occupied_fcc.add(cur_node)
+
+    for i in range(1, n):
+        delta_vec = ca_a0[i] - ca_a0[i - 1]
+        # Rank the 12 FCC star vectors by alignment with the local K_4 step vector
+        best_node: tuple[int, int, int] | None = None
+        best_score = -1e9
+        preferred_busy = False
+        for k in range(c.n_12):
+            vx = int(FCC_N12_VECTORS[k, 2])
+            vy = int(FCC_N12_VECTORS[k, 1])
+            vz = int(FCC_N12_VECTORS[k, 0])
+            dot = float(delta_vec[0] * vx + delta_vec[1] * vy + delta_vec[2] * vz)
+            cand = (cur_node[0] + vx, cur_node[1] + vy, cur_node[2] + vz)
+            if cand in occupied_fcc:
+                if dot > best_score:
+                    preferred_busy = True
+                continue
+            if dot > best_score:
+                best_score = dot
+                best_node = cand
+        if best_node is None:
+            # Shell-2 fallback if all 12 nearest neighbors are sterically saturated
+            best_node = (cur_node[0] + 2, cur_node[1], cur_node[2])
+            while best_node in occupied_fcc:
+                best_node = (best_node[0] + 2, best_node[1], best_node[2])
+            reroutes += 1
+        elif preferred_busy:
+            reroutes += 1
+
+        cur_node = best_node
+        fcc_nodes.append(cur_node)
+        occupied_fcc.add(cur_node)
+
     return MFoldedChain(
         class_sequence=seq,
         k4_grooves=tuple(grooves),
         ca_xyz_a0=ca_a0,
         ca_xyz_dh=ca_a0 * c.a_0_dh,
+        fcc_lattice_nodes=tuple(fcc_nodes),
+        steric_reroutes_count=reroutes,
         bond_records=tuple(bonds),
         thiol_bridges=tuple(bridges),
         total_quanta_ehb=tot_q,
@@ -432,3 +477,109 @@ def m_score_tf_dna_quanta(
             elif s == 0 and (+2 in slots):
                 total_q += 1
     return total_q
+
+
+@dataclass(frozen=True)
+class MCatalyticTriadLock:
+    """M-layer proton-relay catalytic triad lock: nucleophile (1, 7, 11) + switch (14) + acid (18, 19)."""
+
+    nucleophile_idx: int
+    nucleophile_class: int  # 1 (Ser), 7 (Thr), or 11 (Cys)
+    switch_his_idx: int  # 14 (His)
+    acid_idx: int
+    acid_class: int  # 18 (Asp) or 19 (Glu)
+    proton_relay_quanta_ehb: int  # d = 3 E_HB quanta
+
+
+@dataclass(frozen=True)
+class MAtpWalkerLock:
+    """M-layer ATP-binding Walker P-loop lock (`G-x(4)-G-K-[S/T]` -> `6 - x(4) - 6 - 17 - {1,7}`)."""
+
+    start_gly_idx: int
+    second_gly_idx: int
+    lysine_idx: int
+    hydroxyl_idx: int
+    atp_quanta_capacity: int  # d - 1 = 2 E_HB quanta
+
+
+@dataclass(frozen=True)
+class MTransmembraneHelixLock:
+    """M-layer 18-residue (|N_12| + |square| = 18 = 5 turns of 3.6_13) transmembrane rod."""
+
+    start_idx: int
+    end_idx: int
+    length_residues: int  # >= 18
+    nonpolar_fraction: float
+
+
+def m_scan_catalytic_triads(
+    seq: tuple[int, ...] | list[int],
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[MCatalyticTriadLock, ...]:
+    """Scan a Z_21 sequence for proton-relay catalytic triads (nucleophile + His_14 + acid)."""
+    n = len(seq)
+    out: list[MCatalyticTriadLock] = []
+    his_positions = [idx for idx, cls_id in enumerate(seq) if cls_id == 14]
+
+    for h_idx in his_positions:
+        # Search for nucleophile (1, 7, 11) and acid (18, 19) within the 2nd shell window +-N_shell(2)=42
+        w_lo = max(0, h_idx - c.n_shell_2)
+        w_hi = min(n, h_idx + c.n_shell_2 + 1)
+        nuc_idx = -1
+        acid_idx = -1
+        for k in range(w_lo, w_hi):
+            if k == h_idx:
+                continue
+            if nuc_idx == -1 and seq[k] in (1, 7, 11):
+                nuc_idx = k
+            if acid_idx == -1 and seq[k] in (18, 19):
+                acid_idx = k
+        if nuc_idx != -1 and acid_idx != -1:
+            out.append(
+                MCatalyticTriadLock(nuc_idx, int(seq[nuc_idx]), h_idx, acid_idx, int(seq[acid_idx]), c.d)
+            )
+    return tuple(out)
+
+
+def m_scan_atp_walker_locks(
+    seq: tuple[int, ...] | list[int],
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[MAtpWalkerLock, ...]:
+    """Scan a Z_21 sequence for ATP/GTP-binding Walker A P-loops (`6 - x(4) - 6 - 17 - {1,7}`)."""
+    n = len(seq)
+    out: list[MAtpWalkerLock] = []
+    for i in range(n - 7):
+        if (
+            seq[i] == 6
+            and seq[i + 5] == 6
+            and seq[i + 6] == 17
+            and seq[i + 7] in (1, 7)
+        ):
+            out.append(MAtpWalkerLock(i, i + 5, i + 6, i + 7, c.atp_in_ehb_quanta))
+    return tuple(out)
+
+
+def m_scan_transmembrane_rods(
+    seq: tuple[int, ...] | list[int],
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[MTransmembraneHelixLock, ...]:
+    """Scan a Z_21 sequence for 18-residue (|N_12| + |square| = 18) nonpolar transmembrane rods."""
+    n = len(seq)
+    span = c.n_12 + c.n_squares  # 18
+    out: list[MTransmembraneHelixLock] = []
+    i = 0
+    while i <= n - span:
+        window = seq[i : i + span]
+        # Nonpolar classes have only 0 in their hb_fork and no cyclic hinge
+        nonpolar_cnt = sum(
+            1
+            for cls_id in window
+            if M_CLASS_21_SPECS[cls_id].cyclic_hinge == 0
+            and all(s == 0 for s in M_CLASS_21_SPECS[cls_id].hb_fork)
+        )
+        if nonpolar_cnt * 4 >= 3 * span:
+            out.append(MTransmembraneHelixLock(i, i + span - 1, span, nonpolar_cnt / float(span)))
+            i += span
+        else:
+            i += 1
+    return tuple(out)

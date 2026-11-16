@@ -18,19 +18,29 @@ from .m_carrier import (
     HEX_N6_VECTORS,
 )
 from .m_nucleic import (
+    M_CODON_TO_CLASS_21,
     MDuplexLatticeState,
+    MIntronSplicingSpan,
     m_build_duplex,
     m_translate_codons,
+    m_splice_pre_mrna,
+    m_nucleosome_accessibility_profile,
 )
 from .m_polypeptide import (
     MFoldedChain,
     MC2H2Lock,
     MTrpPinLock,
     MIgLock,
+    MCatalyticTriadLock,
+    MAtpWalkerLock,
+    MTransmembraneHelixLock,
     m_fold_chain_cotranslational,
     m_scan_c2h2_locks,
     m_scan_trp_pin_locks,
     m_scan_ig_locks,
+    m_scan_catalytic_triads,
+    m_scan_atp_walker_locks,
+    m_scan_transmembrane_rods,
     m_score_ig_lock_pair_quanta,
     m_score_tf_dna_quanta,
 )
@@ -52,31 +62,50 @@ class MExpressedLocus:
     locus_id: int
     promoter_duplex: MDuplexLatticeState
     coding_duplex: MDuplexLatticeState
+    spliced_introns: tuple[MIntronSplicingSpan, ...]
     class_sequence_z21: tuple[int, ...]
     folded_chain: MFoldedChain
     c2h2_locks: tuple[MC2H2Lock, ...]
     trp_pin_locks: tuple[MTrpPinLock, ...]
     ig_locks: tuple[MIgLock, ...]
+    catalytic_triads: tuple[MCatalyticTriadLock, ...]
+    atp_walker_locks: tuple[MAtpWalkerLock, ...]
+    transmembrane_rods: tuple[MTransmembraneHelixLock, ...]
 
 
-def m_express_locus(locus: MGeneLocus, c: MCarrierConstants = M_CARRIER) -> MExpressedLocus:
-    """Execute the pure M-layer Z_4 -> Z_64 -> Z_21 -> O(L) K_4 fold -> lock scan pipeline."""
+def m_express_locus(
+    locus: MGeneLocus,
+    enable_splicing: bool = True,
+    c: MCarrierConstants = M_CARRIER,
+) -> MExpressedLocus:
+    """Execute the pure M-layer Z_4 -> splice -> Z_64 -> Z_21 -> O(L) K_4 fold -> lock scan pipeline."""
     prom = m_build_duplex(locus.promoter_bases_z4, c=c)
-    cds = m_build_duplex(locus.coding_bases_z4, c=c)
-    seq_z21 = m_translate_codons(locus.coding_bases_z4, stop_at_20=True)
+    if enable_splicing:
+        mature_z4, introns = m_splice_pre_mrna(locus.coding_bases_z4, c=c)
+    else:
+        mature_z4, introns = locus.coding_bases_z4, ()
+    cds = m_build_duplex(mature_z4, c=c)
+    seq_z21 = m_translate_codons(mature_z4, stop_at_20=True)
     folded = m_fold_chain_cotranslational(seq_z21, c=c)
     c2h2 = m_scan_c2h2_locks(seq_z21, c=c)
     trp = m_scan_trp_pin_locks(seq_z21)
     ig = m_scan_ig_locks(seq_z21, c=c)
+    triads = m_scan_catalytic_triads(seq_z21, c=c)
+    walkers = m_scan_atp_walker_locks(seq_z21, c=c)
+    tm_rods = m_scan_transmembrane_rods(seq_z21, c=c)
     return MExpressedLocus(
         locus_id=locus.locus_id,
         promoter_duplex=prom,
         coding_duplex=cds,
+        spliced_introns=introns,
         class_sequence_z21=seq_z21,
         folded_chain=folded,
         c2h2_locks=c2h2,
         trp_pin_locks=trp,
         ig_locks=ig,
+        catalytic_triads=triads,
+        atp_walker_locks=walkers,
+        transmembrane_rods=tm_rods,
     )
 
 
@@ -417,4 +446,134 @@ def m_grow_laminar_column_6(c: MCarrierConstants = M_CARRIER) -> MTissueMorpholo
     tot_q = sum(ev.quanta_ehb for ev in adhesion)
     return MTissueMorphology(
         2, n_layers, tuple(cells), tuple(divisions), (), tuple(adhesion), tuple(synapses), (), tot_q, -tot_q * c.e_hb_e0
+    )
+
+
+@dataclass(frozen=True)
+class MChromosomeScanResult:
+    """De novo M-layer chromosome scan and blind-spot diagnosis on a raw Z_4 sequence."""
+
+    genome_length_bp: int
+    open_chromatin_bp_count: int
+    discovered_loci: tuple[MGeneLocus, ...]
+    expressed_products: tuple[MExpressedLocus, ...]
+    regulatory_quanta_matrix: np.ndarray
+    # Blind spot diagnostics:
+    spliced_loci_indices: tuple[int, ...]  # Loci rescued from in-frame stops by lariat splicing
+    unannotated_lock_free_loci: tuple[int, ...]  # Folded ORFs lacking any known structural lock
+    orphan_promoter_positions: tuple[int, ...]  # Open Major Groove cores (TAAT/TGTTT) with no reader
+    intergenic_dark_spans: tuple[tuple[int, int], ...]  # Non-coding spans outside discovered loci
+
+
+def m_scan_chromosome_de_novo(
+    chromosome_z4: tuple[int, ...] | list[int],
+    min_orf_codons: int = 8,
+    promoter_window_bp: int = 24,
+    c: MCarrierConstants = M_CARRIER,
+) -> MChromosomeScanResult:
+    """Scan a raw 2-bit Z_4 chromosome de novo (zero GFF3 annotations) and diagnose blind spots."""
+    seq = tuple(int(b) & 3 for b in chromosome_z4)
+    n = len(seq)
+    access = m_nucleosome_accessibility_profile(seq, c=c)
+    open_bp = sum(access)
+
+    loci: list[MGeneLocus] = []
+    products: list[MExpressedLocus] = []
+    covered_mask = [0] * n
+    spliced_ids: list[int] = []
+    lock_free_ids: list[int] = []
+
+    i = 0
+    locus_id = 0
+    while i <= n - 3 * min_orf_codons:
+        # Start triplet ATG in Z_4: (2, 0, 3) -> c6 = (2<<4)|(0<<2)|3 = 35 -> class 12
+        if seq[i] == 2 and seq[i + 1] == 0 and seq[i + 2] == 3 and (i == 0 or seq[i - 1] != 2):
+            # Scan downstream for raw or spliced termination
+            max_window = min(n, i + c.n_ring)
+            candidate_raw = seq[i:max_window]
+            spliced_seq, introns = m_splice_pre_mrna(candidate_raw, c=c)
+
+            # Find first stop codon (class 20) in the mature spliced frame
+            stop_codon_idx = -1
+            for k in range(0, len(spliced_seq) - 2, 3):
+                c6 = (spliced_seq[k] << 4) | (spliced_seq[k + 1] << 2) | spliced_seq[k + 2]
+                if M_CODON_TO_CLASS_21[c6] == 20:
+                    stop_codon_idx = k
+                    break
+
+            n_codons = (stop_codon_idx // 3) if stop_codon_idx != -1 else (len(spliced_seq) // 3)
+            if n_codons >= min_orf_codons:
+                intron_bp = sum(sp.excised_length for sp in introns)
+                raw_end = min(n, i + 3 * (n_codons + 1) + intron_bp)
+                p_start = max(0, i - promoter_window_bp)
+                prom_z4 = seq[p_start:i] if i > p_start else seq[i : min(n, i + 12)]
+                cds_raw_z4 = seq[i:raw_end]
+
+                loc = MGeneLocus(locus_id, prom_z4, cds_raw_z4)
+                prod = m_express_locus(loc, enable_splicing=True, c=c)
+                loci.append(loc)
+                products.append(prod)
+
+                if len(prod.spliced_introns) > 0:
+                    spliced_ids.append(locus_id)
+
+                total_locks = (
+                    len(prod.c2h2_locks)
+                    + len(prod.trp_pin_locks)
+                    + len(prod.ig_locks)
+                    + len(prod.catalytic_triads)
+                    + len(prod.atp_walker_locks)
+                    + len(prod.transmembrane_rods)
+                )
+                if total_locks == 0:
+                    lock_free_ids.append(locus_id)
+
+                for p_idx in range(p_start, raw_end):
+                    covered_mask[p_idx] = 1
+
+                locus_id += 1
+                i = raw_end
+                continue
+        i += 1
+
+    reg_mat = m_compute_regulatory_quanta_matrix(products) if products else np.zeros((0, 0), dtype=np.int64)
+
+    # Identify orphan Major Groove cores (0, 2, 2, 0) [TAAT] or (0, 3, 0, 0, 0) [TGTTT]
+    has_taat_reader = any(
+        pin.target_core_z4 == (0, 2, 2, 0) for p in products for pin in p.trp_pin_locks
+    )
+    has_tgttt_reader = any(
+        pin.target_core_z4 == (0, 3, 0, 0, 0) for p in products for pin in p.trp_pin_locks
+    )
+    orphan_pos: list[int] = []
+    for k in range(n - 5):
+        if access[k] == 1:
+            if seq[k : k + 4] == (0, 2, 2, 0) and not has_taat_reader:
+                orphan_pos.append(k)
+            elif seq[k : k + 5] == (0, 3, 0, 0, 0) and not has_tgttt_reader:
+                orphan_pos.append(k)
+
+    # Identify intergenic dark spans
+    dark_spans: list[tuple[int, int]] = []
+    d_start = -1
+    for k in range(n):
+        if covered_mask[k] == 0 and d_start == -1:
+            d_start = k
+        elif covered_mask[k] == 1 and d_start != -1:
+            if k - d_start >= c.n_12:
+                dark_spans.append((d_start, k - 1))
+            d_start = -1
+    if d_start != -1 and (n - d_start) >= c.n_12:
+        dark_spans.append((d_start, n - 1))
+
+    return MChromosomeScanResult(
+        genome_length_bp=n,
+        open_chromatin_bp_count=open_bp,
+        discovered_loci=tuple(loci),
+        expressed_products=tuple(products),
+        regulatory_quanta_matrix=reg_mat,
+        spliced_loci_indices=tuple(spliced_ids),
+        unannotated_lock_free_loci=tuple(lock_free_ids),
+        orphan_promoter_positions=tuple(orphan_pos),
+        intergenic_dark_spans=tuple(dark_spans),
     )

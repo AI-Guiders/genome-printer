@@ -50,6 +50,7 @@ from genome_printer import (
     decode_z21_to_protein,
     format_polypeptide_xray_table,
     format_tissue_xray_table,
+    scan_fasta_and_format_xray,
 )
 
 
@@ -222,3 +223,42 @@ def test_m_tissue_organogenesis_and_fcc_automaton() -> None:
     assert len(col.ig_synaptic_network) == 75
     t_str = format_tissue_xray_table(col)
     assert "TISSUE MORPHOLOGY X-RAY TRACE" in t_str
+
+
+def test_de_novo_fasta_scanner_and_four_former_blind_spots() -> None:
+    """Verify de novo FASTA -> M -> O(1) Fold -> T(FASTA) scan, splicing, self-avoidance, and locks."""
+    # Construct a synthetic eukaryotic chromosome segment containing:
+    #   - Upstream open promoter with TAAT core
+    #   - Gene 0: Exon 1 ("ATGGCG") + 45-bp GU..A..polyY..AG intron containing an in-frame TAA stop
+    #             + Exon 2 encoding a Walker ATP P-loop (GxxxxGKS), Catalytic Triad (S..H..D), and Trp-pin
+    #   - Intergenic dark region
+    #   - Gene 1: Short lock-free ORF (to verify blind-spot detection!)
+    promoter_0 = "GCGCGCGCGCGCTAATGCGCGCGC"
+    # Exon 1: M-A (ATG-GCA) -> no internal GT!
+    exon_1 = "ATGGCA"
+    # 45 bp intron: starts with GT (3,0), has in-frame TAA at offset +3 ("GTATAA"), branch-point A (2) at -21, 19-bp poly-T tract, ends with AG (2,3)
+    intron_45 = "GTATAA" + ("C" * 17) + "A" + ("T" * 19) + "AG"
+    # Exon 2: G-Q-Q-Q-Q-G-K-S (Walker ATP) + H-Q-D (Catalytic triad with S) + W-F-Q-N-R-R (Trp-pin) + TAA
+    exon_2 = "GGACAGCAGCAGCAGGGAAAAAGCCATCAGGACTGGTTCCAGAACCGCCGCTAA"
+    intergenic = "C" * 36
+    orf_blind_spot = "ATGGCGCTGGCGGCGCTGGCGCTGGCGTAA"
+
+    synthetic_fasta = f">synthetic_chr1\n{promoter_0}{exon_1}{intron_45}{exon_2}{intergenic}{orf_blind_spot}\n"
+    scan, report = scan_fasta_and_format_xray(synthetic_fasta, min_orf_codons=8)
+
+    assert len(scan.expressed_products) == 2
+    # Locus 0 was rescued by M-layer lariat splicing of the 45-bp intron!
+    assert 0 in scan.spliced_loci_indices
+    prod0 = scan.expressed_products[0]
+    assert len(prod0.spliced_introns) == 1
+    assert prod0.spliced_introns[0].excised_length == 45
+    assert len(prod0.atp_walker_locks) == 1
+    assert len(prod0.catalytic_triads) >= 1
+    assert len(prod0.trp_pin_locks) >= 1
+    # Verify strict 3D FCC N12 self-avoidance (Pauli occupancy b(x) in {0, 1})
+    fcc_nodes = prod0.folded_chain.fcc_lattice_nodes
+    assert len(set(fcc_nodes)) == len(fcc_nodes)
+
+    # Locus 1 has no structural lock and is flagged as a blind spot
+    assert 1 in scan.unannotated_lock_free_loci
+    assert "DE NOVO FASTA -> M -> T(FASTA) X-RAY SCAN" in report

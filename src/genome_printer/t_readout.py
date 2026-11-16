@@ -22,7 +22,7 @@ from .m_chemistry import (
 )
 from .m_nucleic import MDuplexLatticeState
 from .m_polypeptide import MFoldedChain
-from .m_tissue import MTissueMorphology
+from .m_tissue import MTissueMorphology, MChromosomeScanResult, m_scan_chromosome_de_novo
 
 
 # T-layer IUPAC base codec: b in Z_4 (0, 1, 2, 3) <-> ('T'/'U', 'C', 'A', 'G')
@@ -197,3 +197,60 @@ def format_tissue_xray_table(
                 f"e_FCC={syn.fcc_link_vector} | {syn.quanta_ehb} E_HB ({e_kj:.2f} kJ/mol)"
             )
     return "\n".join(lines)
+
+
+def scan_fasta_and_format_xray(
+    fasta_dna: str,
+    min_orf_codons: int = 8,
+    proj: TSIBridgeProjector = T_PROJECTOR,
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[MChromosomeScanResult, str]:
+    """Execute FASTA (T) -> Z_4 (M) -> Splicing + O(1) Fold + Locks (M) -> T(FASTA) + Blind Spots report."""
+    clean_dna = "".join(
+        line.strip().upper()
+        for line in fasta_dna.splitlines()
+        if not line.strip().startswith(">")
+    )
+    codes_z4 = encode_dna_to_z4(clean_dna)
+    scan = m_scan_chromosome_de_novo(codes_z4, min_orf_codons=min_orf_codons, c=c)
+
+    lines = [
+        f"=== DE NOVO FASTA -> M -> T(FASTA) X-RAY SCAN ({scan.genome_length_bp} bp) ===",
+        f"Open 147-bp chromatin windows: {scan.open_chromatin_bp_count} / {scan.genome_length_bp} bp "
+        f"| Discovered ORFs: {len(scan.expressed_products)}",
+        f"Spliced intron-rescued ORFs: {list(scan.spliced_loci_indices)} | "
+        f"Lock-free ORFs (blind spots): {list(scan.unannotated_lock_free_loci)} | "
+        f"Orphan promoters: {len(scan.orphan_promoter_positions)}",
+        "-" * 96,
+    ]
+    for prod in scan.expressed_products:
+        prot_str = decode_z21_to_protein(prod.class_sequence_z21)
+        f = prod.folded_chain
+        e_kj = -proj.quanta_ehb_to_kj_mol(f.total_quanta_ehb, c=c)
+        locks_summary: list[str] = []
+        if prod.spliced_introns:
+            locks_summary.append(f"spliced_introns={len(prod.spliced_introns)}")
+        if prod.c2h2_locks:
+            locks_summary.append(f"C2H2(|N12|=12)={len(prod.c2h2_locks)}")
+        if prod.trp_pin_locks:
+            locks_summary.append(f"TrpPin={len(prod.trp_pin_locks)}")
+        if prod.ig_locks:
+            locks_summary.append(f"Ig(N_HB=63)={len(prod.ig_locks)}")
+        if prod.catalytic_triads:
+            locks_summary.append(f"CatalyticTriad={len(prod.catalytic_triads)}")
+        if prod.atp_walker_locks:
+            locks_summary.append(f"WalkerATP={len(prod.atp_walker_locks)}")
+        if prod.transmembrane_rods:
+            locks_summary.append(f"TM18={len(prod.transmembrane_rods)}")
+        lock_str = ", ".join(locks_summary) if locks_summary else "BLIND_SPOT (no lock)"
+
+        lines.append(
+            f"Locus #{prod.locus_id:2d} | L={len(prot_str):3d} aa | "
+            f"bonds={f.total_quanta_ehb:3d} E_HB ({e_kj:7.1f} kJ/mol) | "
+            f"FCC_self_avoid={len(set(f.fcc_lattice_nodes)) == len(f.fcc_lattice_nodes)} | "
+            f"Locks: {lock_str}"
+        )
+    if scan.intergenic_dark_spans:
+        lines.append("-" * 96)
+        lines.append(f"Intergenic non-coding spans (>=12 bp): {list(scan.intergenic_dark_spans)}")
+    return scan, "\n".join(lines)

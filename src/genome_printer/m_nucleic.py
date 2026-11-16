@@ -190,3 +190,117 @@ def m_build_duplex(
         total_energy_e0=-tot_q * c.e_hb_e0,
         nucleosome_ball_fraction=n / float(c.n_ball_3),
     )
+
+
+@dataclass(frozen=True)
+class MIntronSplicingSpan:
+    """M-layer spliced intron lariat span on a 2-bit Z_4 transcript.
+
+    Physical splicing gate on Z_4:
+      - 5' donor stem: `s_donor = (3 << 2) | 0 = 12` (`(3, 0)` in Z_4, i.e., `GU`),
+      - 3' acceptor stem: `s_acceptor = (2 << 2) | 3 = 11` (`(2, 3)` in Z_4, i.e., `AG`),
+      - Branch-point adenosine `b = 2` preceded by a 2-bond pyrimidine tract (`b in {0, 1}`)
+        located within the cuboctahedral shell window `[j - N_shell(2), j - N_shell(1)] = [j - 42, j - 12]`
+        upstream of the 3' acceptor `j`,
+      - Frame-rescue condition: excising `[i .. j + 1]` removes an in-frame termination
+        triplet (`class 20`) that would otherwise truncate the open reading frame!
+    """
+
+    donor_start_idx: int
+    branch_point_idx: int
+    acceptor_end_idx: int  # Inclusive index of the final base `3` of the (2, 3) acceptor
+    excised_length: int
+
+
+def m_splice_pre_mrna(
+    bases_z4: tuple[int, ...] | list[int],
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[tuple[int, ...], tuple[MIntronSplicingSpan, ...]]:
+    """Deterministic M-layer lariat splicing of a 2-bit Z_4 transcript."""
+    seq = tuple(int(b) & 3 for b in bases_z4)
+    n = len(seq)
+    spliced: list[int] = []
+    spans: list[MIntronSplicingSpan] = []
+
+    i = 0
+    while i < n:
+        # Check for 5' donor dinucleotide (3, 0) [stem 12]
+        if i + 1 < n and seq[i] == 3 and seq[i + 1] == 0:
+            found_intron: MIntronSplicingSpan | None = None
+            # Search for 3' acceptor (2, 3) [stem 11] within [i + N_shell(2) - 1 .. i + N_ring]
+            min_end = i + c.n_shell_2 - 1
+            max_end = min(n - 1, i + c.n_ring)
+            for j in range(min_end, max_end):
+                if seq[j - 1] == 2 and seq[j] == 3:
+                    # Check if the candidate intron [i .. j] contains at least one IN-FRAME stop codon (class 20)
+                    has_stop = False
+                    for k in range(i, j - 2):
+                        if (k % 3) != 0:
+                            continue
+                        c6 = (seq[k] << 4) | (seq[k + 1] << 2) | seq[k + 2]
+                        if M_CODON_TO_CLASS_21[c6] == 20:
+                            has_stop = True
+                            break
+                    if not has_stop:
+                        continue
+                    # Locate branch-point base `2` within [j - 42 .. j - 12] followed by a pure pyrimidine tract (0 or 1)
+                    bp_idx = -1
+                    w_lo = max(i + 6, j - c.n_shell_2)
+                    w_hi = max(w_lo, j - c.n_shell_1)
+                    for b_pos in range(w_lo, w_hi + 1):
+                        if seq[b_pos] == 2:
+                            tract = seq[b_pos + 1 : j - 1]
+                            if len(tract) >= c.n_12 and all(b_tr in (0, 1) for b_tr in tract):
+                                bp_idx = b_pos
+                                break
+                    if bp_idx != -1:
+                        found_intron = MIntronSplicingSpan(i, bp_idx, j, j - i + 1)
+                        break
+            if found_intron is not None:
+                spans.append(found_intron)
+                i = found_intron.acceptor_end_idx + 1
+                continue
+
+        spliced.append(seq[i])
+        i += 1
+
+    return tuple(spliced), tuple(spans)
+
+
+def m_nucleosome_accessibility_profile(
+    bases_z4: tuple[int, ...] | list[int],
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[int, ...]:
+    """Compute 147-bp (N_ball(3) = 147) chromatin accessibility flag (1=open, 0=wrapped) per base.
+
+    A 147-bp window wraps into a closed nucleosome core particle unless its average
+    H-bond track stiffness exceeds 2.5 E_HB/bp (3-bond GC islands) or contains a rigid
+    homopolymer tract of length >= d_out(V) = 7 that resists {111} superhelical bending.
+    """
+    seq = tuple(int(b) & 3 for b in bases_z4)
+    n = len(seq)
+    win = c.n_ball_3  # 147
+    if n < win:
+        return tuple(1 for _ in range(n))
+
+    open_flags = [0] * n
+    for start in range(0, n - win + 1, c.bdna_bp_per_turn):
+        end = start + win
+        sub = seq[start:end]
+        # Count 3-bond pairs (b in {1, 3}) and max homopolymer run
+        three_bond_count = sum(1 for b in sub if b in (1, 3))
+        max_run = 1
+        cur_run = 1
+        for k in range(1, win):
+            if sub[k] == sub[k - 1]:
+                cur_run += 1
+                if cur_run > max_run:
+                    max_run = cur_run
+            else:
+                cur_run = 1
+        # Open promoter window if 3-bond fraction > 2/3 or homopolymer run >= d_out(V) = 7
+        if three_bond_count * 3 >= 2 * win or max_run >= c.d_out_v:
+            for k in range(start, end):
+                open_flags[k] = 1
+
+    return tuple(open_flags)
