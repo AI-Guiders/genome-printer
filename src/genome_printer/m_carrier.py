@@ -252,6 +252,16 @@ class MCarrierConstants:
         """Cellular energy quantum in integer units of E_HB: d - 1 = 2."""
         return self.d - 1
 
+    @property
+    def lyman_wavelength_in_a0_units(self) -> float:
+        """Lyman-limit photon wavelength lambda_Ly in units of a_0: 1 / (r * alpha_fs) = 4 * pi / alpha_fs."""
+        return 1.0 / (self.phase_residue_r * self.alpha_fs)
+
+    @property
+    def lyman_wavelength_dh(self) -> float:
+        """Lyman-limit photon wavelength lambda_Ly in native lattice steps dh: N_a0 / (r * alpha_fs) * dh."""
+        return self.lyman_wavelength_in_a0_units * self.a_0_dh
+
     # --- Molecular & Biological Step Lengths in both a_0 and native dh steps ---
 
     @property

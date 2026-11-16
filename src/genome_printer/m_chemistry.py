@@ -156,6 +156,8 @@ class MThermalMobilityWindow:
     min_e_hard_in_ehb_quanta: float  # |N_12| * e_soft_in_ehb_quanta
     t_min_over_t_hb: float  # (1 / floor(B_V)) * e_soft_in_ehb_quanta
     t_max_over_t_hb: float  # (d_in(sq) / d^3) * e_soft_in_ehb_quanta
+    photon_wavelength_in_a0: float  # N_HB / (r * alpha_fs * e_soft_in_ehb_quanta)
+    photon_wavelength_dh: float  # photon_wavelength_in_a0 * N_a0 * dh
 
 
 def m_compute_life_thermal_windows(
@@ -168,14 +170,19 @@ def m_compute_life_thermal_windows(
         (0, 1.0),
         (1, ratios.vap_in_ehb_quanta),
     )
-    return tuple(
-        MThermalMobilityWindow(
-            rung_m=rung,
-            e_soft_in_ehb_quanta=q,
-            min_e_hard_in_ehb_quanta=float(c.n_12) * q,
-            t_min_over_t_hb=ratios.t_melt_over_t_hb * q,
-            t_max_over_t_hb=ratios.t_boil_over_t_hb * q,
+    out: list[MThermalMobilityWindow] = []
+    for rung, q in quanta_ladder:
+        wl_a0 = (ratios.n_hb_divisor / q) * c.lyman_wavelength_in_a0_units
+        out.append(
+            MThermalMobilityWindow(
+                rung_m=rung,
+                e_soft_in_ehb_quanta=q,
+                min_e_hard_in_ehb_quanta=float(c.n_12) * q,
+                t_min_over_t_hb=ratios.t_melt_over_t_hb * q,
+                t_max_over_t_hb=ratios.t_boil_over_t_hb * q,
+                photon_wavelength_in_a0=wl_a0,
+                photon_wavelength_dh=wl_a0 * c.a_0_dh,
+            )
         )
-        for rung, q in quanta_ladder
-    )
+    return tuple(out)
 
