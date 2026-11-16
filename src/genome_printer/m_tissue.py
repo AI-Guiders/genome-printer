@@ -924,3 +924,114 @@ def m_synthesize_gene_and_protein(
         dna_binding_quanta_verified=dna_q,
         all_constraints_satisfied=all_ok,
     )
+
+
+@dataclass(frozen=True)
+class MSynthesizedChromosome:
+    """M-layer de novo chromosome synthesized for a target 3D tissue stage code (2, 3, or 4)."""
+
+    target_stage_code: int  # 2: Hollow Vesicle S^2 (chi=2), 3: Hollow Hex Tube (chi=0), 4: 6-Layer Column (chi=41)
+    synthesized_loci: tuple[MSynthesizedGeneProduct, ...]
+    chromosome_z4: tuple[int, ...]
+    de_novo_scan_verification: MChromosomeScanResult
+    morphology_verified: bool
+
+
+def m_synthesize_chromosome_for_morphology(
+    target_stage_code: int = 4,
+    min_stability_quanta_ehb: int = 48,
+    c: MCarrierConstants = M_CARRIER,
+) -> MSynthesizedChromosome:
+    """Compile a complete Z_4 chromosome from a target 3D organ stage code (2, 3, 4) and self-verify via de novo scan."""
+    specs: list[MProteinSynthesisSpec] = []
+    if target_stage_code == 2:
+        # Stage 2 (Hollow Vesicle S_1, chi_2D = 2): isotropic O_h metabolic locus (CatalyticTriad + WalkerATP, no axial/Ig locks)
+        specs.append(
+            MProteinSynthesisSpec(
+                target_c2h2_dna_triplets_z4=(),
+                target_trp_pin_core_z4=(),
+                require_catalytic_triad=1,
+                require_atp_walker_motor=1,
+                require_transmembrane_rod=0,
+                ig_synaptic_polarity=0,
+                min_stability_quanta_ehb=min_stability_quanta_ehb,
+            )
+        )
+    elif target_stage_code == 3:
+        # Stage 3 (Hollow Hexagonal Tube, chi_2D = 0): D_3d axial breaking locus (C2H2 + Trp-pin + WalkerATP + TM18, no Ig rescue)
+        specs.append(
+            MProteinSynthesisSpec(
+                target_c2h2_dna_triplets_z4=((3, 1, 3),),
+                target_trp_pin_core_z4=(0, 2, 2, 0),
+                require_catalytic_triad=1,
+                require_atp_walker_motor=1,
+                require_transmembrane_rod=1,
+                ig_synaptic_polarity=0,
+                min_stability_quanta_ehb=min_stability_quanta_ehb,
+            )
+        )
+    else:
+        # Stage 4 (6-Layer Cortical Column, 42 cells, 147 contacts, chi_2D = 41):
+        # Locus 0: D_3d axial regulator + metabolic motor + Ig_donor (+1, N_HB = 63)
+        specs.append(
+            MProteinSynthesisSpec(
+                target_c2h2_dna_triplets_z4=((3, 1, 3),),
+                target_trp_pin_core_z4=(0, 2, 2, 0),
+                require_catalytic_triad=1,
+                require_atp_walker_motor=1,
+                require_transmembrane_rod=1,
+                ig_synaptic_polarity=+1,
+                min_stability_quanta_ehb=min_stability_quanta_ehb,
+            )
+        )
+        # Locus 1: Complementary synaptic partner Ig_acceptor (-1, N_HB = 63)
+        specs.append(
+            MProteinSynthesisSpec(
+                target_c2h2_dna_triplets_z4=((1, 3, 1),),
+                target_trp_pin_core_z4=(),
+                require_catalytic_triad=0,
+                require_atp_walker_motor=0,
+                require_transmembrane_rod=0,
+                ig_synaptic_polarity=-1,
+                min_stability_quanta_ehb=min_stability_quanta_ehb,
+            )
+        )
+
+    synth_loci: list[MSynthesizedGeneProduct] = []
+    chr_bases: list[int] = []
+    # 3-bond-clamped intergenic insulator (b=1) to prevent out-of-locus ATG starts
+    insulator = [1] * (2 * c.n_12)
+
+    for idx, sp in enumerate(specs):
+        prod = m_synthesize_gene_and_protein(sp, locus_id=idx, c=c)
+        synth_loci.append(prod)
+        # Ensure the base immediately preceding ATG (2, 0, 3) is 1 (not 2)
+        chr_bases.extend(insulator)
+        chr_bases.extend(prod.synthesized_promoter_z4)
+        chr_bases.append(1)
+        chr_bases.extend(prod.synthesized_coding_dna_z4)
+
+    chr_bases.extend(insulator)
+    chr_tuple = tuple(chr_bases)
+
+    # Blind de novo chromosome scan and autonomous 3D morphogenesis verification
+    scan = m_scan_chromosome_de_novo(chr_tuple, min_orf_codons=8, c=c)
+    morph = scan.autonomous_tissue
+    snap = morph.topology_snapshot if morph is not None else None
+
+    expected_chi = 2 if target_stage_code == 2 else (0 if target_stage_code == 3 else c.delta_phi_disc)
+    verified = (
+        all(lp.all_constraints_satisfied for lp in synth_loci)
+        and len(scan.expressed_products) == len(specs)
+        and snap is not None
+        and snap.carrier_stage_code == target_stage_code
+        and snap.euler_chi_2d == expected_chi
+    )
+
+    return MSynthesizedChromosome(
+        target_stage_code=target_stage_code,
+        synthesized_loci=tuple(synth_loci),
+        chromosome_z4=chr_tuple,
+        de_novo_scan_verification=scan,
+        morphology_verified=verified,
+    )

@@ -91,6 +91,7 @@ from .m_tissue import (
     MTissueMorphology,
     MChromosomeScanResult,
     MSynthesizedGeneProduct,
+    MSynthesizedChromosome,
     m_express_locus,
     m_compute_regulatory_quanta_matrix,
     m_step_fcc_morphogen_automaton,
@@ -103,6 +104,7 @@ from .m_tissue import (
     m_grow_laminar_column_6,
     m_scan_chromosome_de_novo,
     m_synthesize_gene_and_protein,
+    m_synthesize_chromosome_for_morphology,
 )
 from .t_readout import (
     T_BASE_TO_Z4,
@@ -122,6 +124,7 @@ from .t_readout import (
     format_tissue_xray_table,
     scan_fasta_and_format_xray,
     synthesize_gene_and_protein_xray,
+    synthesize_chromosome_for_morphology_xray,
 )
 
 __all__ = [

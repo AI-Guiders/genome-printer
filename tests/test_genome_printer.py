@@ -55,6 +55,7 @@ from genome_printer import (
     format_tissue_xray_table,
     scan_fasta_and_format_xray,
     synthesize_gene_and_protein_xray,
+    synthesize_chromosome_for_morphology_xray,
 )
 
 
@@ -390,3 +391,31 @@ def test_de_novo_protein_and_gene_synthesis_with_prescribed_properties() -> None
     assert len(min_res.verified_expression.transmembrane_rods) == 0
     assert len(min_res.verified_expression.ig_locks) == 0
     assert "VERIFIED=True" in min_cert
+
+    # Full closed-loop chromosome synthesis for all three 3D organ architectures (stages 2, 3, and 4):
+    # Target Stage -> Synthesize Z_4 Chromosome -> Blind De Novo Scan -> Autonomous 3D Organ Growth -> Euler/Betti Verify
+    chr_vesicle, cert_v = synthesize_chromosome_for_morphology_xray(target_stage_code=2, min_stability_quanta_ehb=48)
+    assert chr_vesicle.morphology_verified is True
+    assert chr_vesicle.de_novo_scan_verification.autonomous_tissue is not None
+    assert chr_vesicle.de_novo_scan_verification.autonomous_tissue.topology_snapshot is not None
+    assert chr_vesicle.de_novo_scan_verification.autonomous_tissue.topology_snapshot.euler_chi_2d == 2
+    assert len(chr_vesicle.de_novo_scan_verification.autonomous_tissue.living_cells) == 12
+    assert "VERIFIED=True" in cert_v
+
+    chr_tube, cert_t = synthesize_chromosome_for_morphology_xray(target_stage_code=3, min_stability_quanta_ehb=48)
+    assert chr_tube.morphology_verified is True
+    assert chr_tube.de_novo_scan_verification.autonomous_tissue is not None
+    assert chr_tube.de_novo_scan_verification.autonomous_tissue.topology_snapshot is not None
+    assert chr_tube.de_novo_scan_verification.autonomous_tissue.topology_snapshot.euler_chi_2d == 0
+    assert len(chr_tube.de_novo_scan_verification.autonomous_tissue.living_cells) == 24
+    assert "VERIFIED=True" in cert_t
+
+    chr_col, cert_c = synthesize_chromosome_for_morphology_xray(target_stage_code=4, min_stability_quanta_ehb=48)
+    assert chr_col.morphology_verified is True
+    assert len(chr_col.de_novo_scan_verification.expressed_products) == 2
+    assert chr_col.de_novo_scan_verification.autonomous_tissue is not None
+    assert chr_col.de_novo_scan_verification.autonomous_tissue.topology_snapshot is not None
+    assert chr_col.de_novo_scan_verification.autonomous_tissue.topology_snapshot.euler_chi_2d == 41
+    assert len(chr_col.de_novo_scan_verification.autonomous_tissue.living_cells) == 42
+    assert len(chr_col.de_novo_scan_verification.autonomous_tissue.adhesion_network) == 147
+    assert "VERIFIED=True" in cert_c

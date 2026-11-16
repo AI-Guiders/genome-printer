@@ -26,8 +26,10 @@ from .m_tissue import (
     MTissueMorphology,
     MChromosomeScanResult,
     MSynthesizedGeneProduct,
+    MSynthesizedChromosome,
     m_scan_chromosome_de_novo,
     m_synthesize_gene_and_protein,
+    m_synthesize_chromosome_for_morphology,
 )
 
 
@@ -354,4 +356,38 @@ def synthesize_gene_and_protein_xray(
         f"Ig(N_HB=63)={len(res.verified_expression.ig_locks)}",
         f"Verified Promoter Binding Affinity: -{res.dna_binding_quanta_verified} E_HB ({bind_kj:.2f} kJ/mol)",
     ]
+    return res, "\n".join(lines)
+
+
+def synthesize_chromosome_for_morphology_xray(
+    target_stage_code: int = 4,
+    min_stability_quanta_ehb: int = 48,
+    proj: TSIBridgeProjector = T_PROJECTOR,
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[MSynthesizedChromosome, str]:
+    """Synthesize a complete FASTA chromosome for a target 3D organ stage (2, 3, or 4) and verify via de novo scan."""
+    res = m_synthesize_chromosome_for_morphology(
+        target_stage_code=target_stage_code,
+        min_stability_quanta_ehb=min_stability_quanta_ehb,
+        c=c,
+    )
+    chr_dna = decode_z4_to_dna(res.chromosome_z4)
+    scan = res.de_novo_scan_verification
+    morph = scan.autonomous_tissue
+    s = morph.topology_snapshot if morph is not None else None
+    stage_str = T_CARRIER_STAGE_NAMES.get(s.carrier_stage_code, "Unknown") if s is not None else "None"
+    tot_kj = -proj.quanta_ehb_to_kj_mol(morph.total_quanta_ehb, c=c) if morph is not None else 0.0
+
+    lines = [
+        f"=== DE NOVO CHROMOSOME -> 3D ORGAN SYNTHESIS CERTIFICATE (VERIFIED={res.morphology_verified}) ===",
+        f"Target Stage Code: {target_stage_code} -> Grown: {stage_str}",
+        f"Synthesized Chromosome Length: {len(chr_dna)} bp | Discovered ORFs on blind scan: {len(scan.expressed_products)}",
+    ]
+    if s is not None and morph is not None:
+        lines.append(
+            f"Grown 3D Tissue Invariants: V={s.v_cells} cells, E={s.e_contacts} contacts (E_Ig={s.ig_synapses_count}), "
+            f"F_tri={s.f_triangles}, F_sq={s.f_squares_surface}, K4={s.k4_tetrahedra}, "
+            f"chi_2D={s.euler_chi_2d}, Betti=({s.betti_0},{s.betti_1_open_channels},{s.betti_2_closed_cavities}) | "
+            f"E_adhesion = -{morph.total_quanta_ehb} E_HB ({tot_kj:.2f} kJ/mol)"
+        )
     return res, "\n".join(lines)
