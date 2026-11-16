@@ -204,13 +204,13 @@ def test_m_chemistry_and_t_projector() -> None:
             rel_tol=1e-12,
         )
         assert math.isclose(
-            w_m.photon_wavelength_in_a0,
-            M_CARRIER.n_hb / (M_CARRIER.phase_residue_r * M_CARRIER.alpha_fs * w_m.e_soft_in_ehb_quanta),
+            w_m.reduced_wavelength_in_a0,
+            ((M_CARRIER.d - 1.0) * M_CARRIER.n_hb) / (M_CARRIER.alpha_fs * w_m.e_soft_in_ehb_quanta),
             rel_tol=1e-12,
         )
         assert math.isclose(
-            w_m.photon_wavelength_dh,
-            w_m.photon_wavelength_in_a0 * M_CARRIER.a_0_dh,
+            w_m.reduced_wavelength_dh,
+            w_m.reduced_wavelength_in_a0 * M_CARRIER.a_0_dh,
             rel_tol=1e-12,
         )
 

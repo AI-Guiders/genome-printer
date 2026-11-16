@@ -253,14 +253,14 @@ class MCarrierConstants:
         return self.d - 1
 
     @property
-    def lyman_wavelength_in_a0_units(self) -> float:
-        """Lyman-limit photon wavelength lambda_Ly in units of a_0: 1 / (r * alpha_fs) = 4 * pi / alpha_fs."""
-        return 1.0 / (self.phase_residue_r * self.alpha_fs)
+    def reduced_lyman_wavelength_in_a0(self) -> float:
+        """Reduced Lyman photon step lambda_bar_Ly = (s_0 * c) / BE_H in units of a_0 (purely algebraic, zero pi): (d - 1) / alpha_fs."""
+        return float(self.d - 1) / self.alpha_fs
 
     @property
-    def lyman_wavelength_dh(self) -> float:
-        """Lyman-limit photon wavelength lambda_Ly in native lattice steps dh: N_a0 / (r * alpha_fs) * dh."""
-        return self.lyman_wavelength_in_a0_units * self.a_0_dh
+    def reduced_lyman_wavelength_dh(self) -> float:
+        """Reduced Lyman photon step lambda_bar_Ly in native lattice steps dh (zero pi): (d - 1) * N_a0 / alpha_fs * dh."""
+        return self.reduced_lyman_wavelength_in_a0 * self.a_0_dh
 
     # --- Molecular & Biological Step Lengths in both a_0 and native dh steps ---
 

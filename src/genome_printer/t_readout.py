@@ -172,7 +172,8 @@ class TSIBridgeProjector:
                     "min_e_hard_kj_mol": w.min_e_hard_in_ehb_quanta * e_hb_kj,
                     "t_min_kelvin": w.t_min_over_t_hb * t_hb_k,
                     "t_max_kelvin": w.t_max_over_t_hb * t_hb_k,
-                    "photon_wavelength_um": (w.photon_wavelength_in_a0 * self.a_0_angstrom) * 1e-4,
+                    "reduced_wavelength_a0": w.reduced_wavelength_in_a0,
+                    "spectroscopic_wavelength_um": (2.0 * math.pi * w.reduced_wavelength_in_a0 * self.a_0_angstrom) * 1e-4,
                 }
             )
         return out
