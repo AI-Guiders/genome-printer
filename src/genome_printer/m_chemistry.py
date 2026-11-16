@@ -42,30 +42,31 @@ def m_ionization_ratio_be_h(z: int, c: MCarrierConstants = M_CARRIER) -> float:
         f_open = 1.0 - (1.0 / c.n_12) - seam  # 71 / 78
         return 2.0 * f_open
 
-    z_li_base = 3.0 - 2.0 * (1.0 - 1.0 / c.n_hier)  # 5 / 4
+    z_li_base = c.d - 2.0 * (1.0 - 1.0 / c.n_hier)  # 5 / 4
     delta_z_sq = (1.0 / c.d_in_sq) + seam  # 10 / 39
+    z_sq_start = c.d_in_sq + 1  # 5 (opening of the 2p square_6 channel)
 
-    if z == 3:
+    if z == c.d:
         z_eff = z_li_base + seam
-    elif z == 4:
+    elif z == c.d_in_sq:
         z_eff = z_li_base + (1.0 - c.d_out_v / c.n_12) - seam
-    elif 5 <= z <= 7:
-        z_eff = (z_li_base ** 2) + (z - 5) * delta_z_sq
-    elif 8 <= z <= 10:
-        z_eff = (8.0 - c.n_squares) + (z - 8) * delta_z_sq
+    elif z_sq_start <= z <= c.d_out_v:
+        z_eff = (z_li_base ** 2) + (z - z_sq_start) * delta_z_sq
+    elif c.n_hier <= z <= c.n_hier + (c.d - 1):
+        z_eff = (c.n_hier - c.n_squares) + (z - c.n_hier) * delta_z_sq
     else:
         return 0.0
 
-    return (z_eff / 2.0) ** 2
+    return (z_eff / (c.d - 1.0)) ** 2
 
 
 def m_covalent_radius_in_a0(z: int, bond_order: int = 1, c: MCarrierConstants = M_CARRIER) -> float:
     """Dimensionless covalent radius r_cov(Z) / a_0 for Z=1, Z=4..9, and Z=14..16."""
     if z == 1:
         r_single = c.kappa
-    elif 4 <= z <= 9:
+    elif c.d_in_sq <= z <= c.mod_bits:
         r_single = ((c.d * c.n_phi - 2 * z) / c.n_phi) * c.kappa
-    elif 14 <= z <= 16:
+    elif (c.n_12 + 2) <= z <= (c.n_12 + c.d_in_sq):
         r_p2 = m_covalent_radius_in_a0(z - c.n_hier, bond_order=1, c=c)
         r_single = r_p2 + (c.n_12 / c.n_phi) * c.kappa
     else:
@@ -86,9 +87,11 @@ def m_find_hydrogen_commensurate_backbone_pairs(
       - (6, 7) [C-N: aqueous peptide & nucleic-acid backbone in the [T_melt, T_boil] H2O window].
     """
     r_h = m_covalent_radius_in_a0(1, bond_order=1, c=c)
+    z_sq_start = c.d_in_sq + 1
+    z_sq_end = c.n_hier
     pairs: list[tuple[int, int]] = []
-    for z1 in range(5, 9):
-        for z2 in range(z1 + 1, 9):
+    for z1 in range(z_sq_start, z_sq_end + 1):
+        for z2 in range(z1 + 1, z_sq_end + 1):
             ratio = (m_covalent_radius_in_a0(z1, bond_order=1, c=c) + m_covalent_radius_in_a0(z2, bond_order=1, c=c)) / r_h
             if abs(ratio - round(ratio)) < 1e-12:
                 pairs.append((z1, z2))
@@ -142,3 +145,37 @@ def m_compute_hbond_phase_ratios(c: MCarrierConstants = M_CARRIER) -> MHBondPhas
         t_crit_over_t_hb=c.n_hier / float(c.d_in_sq * c.n_hier - 1),
         bcs_gap_ratio=(c.d_out_v / 2.0) * (c.m_hat / (c.m_hat - 1.0)),
     )
+
+
+@dataclass(frozen=True)
+class MThermalMobilityWindow:
+    """Dimensionless carrier mobility window [1/floor(B_V), d_in(sq)/d^3] * E_soft^(m) and hierarchy bound E_hard >= |N_12| * E_soft^(m)."""
+
+    rung_m: int  # -1 (cryogenic fus_quantum = 2/7), 0 (unit E_HB = 1), +1 (vap_quantum = 2)
+    e_soft_in_ehb_quanta: float
+    min_e_hard_in_ehb_quanta: float  # |N_12| * e_soft_in_ehb_quanta
+    t_min_over_t_hb: float  # (1 / floor(B_V)) * e_soft_in_ehb_quanta
+    t_max_over_t_hb: float  # (d_in(sq) / d^3) * e_soft_in_ehb_quanta
+
+
+def m_compute_life_thermal_windows(
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[MThermalMobilityWindow, ...]:
+    """Compute the 3 dimensionless thermal mobility windows inherited from `MHBondPhaseRatios` (2/7, 1, 2 E_HB)."""
+    ratios = m_compute_hbond_phase_ratios(c=c)
+    quanta_ladder = (
+        (-1, ratios.fus_in_ehb_quanta),
+        (0, 1.0),
+        (1, ratios.vap_in_ehb_quanta),
+    )
+    return tuple(
+        MThermalMobilityWindow(
+            rung_m=rung,
+            e_soft_in_ehb_quanta=q,
+            min_e_hard_in_ehb_quanta=float(c.n_12) * q,
+            t_min_over_t_hb=ratios.t_melt_over_t_hb * q,
+            t_max_over_t_hb=ratios.t_boil_over_t_hb * q,
+        )
+        for rung, q in quanta_ladder
+    )
+

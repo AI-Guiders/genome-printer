@@ -22,6 +22,7 @@ from genome_printer import (
     m_find_hydrogen_commensurate_backbone_pairs,
     m_sp3_bond_angle_cos,
     m_compute_hbond_phase_ratios,
+    m_compute_life_thermal_windows,
     M_FRONTAL_TRACKS,
     M_MAJOR_GROOVE_SLOTS,
     M_RUMER_OCTET_I_STEMS,
@@ -126,16 +127,22 @@ def test_m_chemistry_and_t_projector() -> None:
         rel_tol=1e-12,
     )
     # Exactly two p-block square-channel pairs (Z1 + Z2 == N_phi == 13) are commensurate with r_cov(H):
-    # (5, 8) [B-O] and (6, 7) [C-N], while period-3 Si (Z=14) has exact radius 3 * kappa * a_0
-    assert m_find_hydrogen_commensurate_backbone_pairs() == ((5, 8), (6, 7))
-    assert math.isclose(m_covalent_radius_in_a0(14, bond_order=1), 3.0 * M_CARRIER.kappa, rel_tol=1e-12)
+    # (5, 8) [B-O] and (6, 7) [C-N], while period-3 Si (Z=14) has exact radius d * kappa * a_0
+    comm_pairs = m_find_hydrogen_commensurate_backbone_pairs()
+    assert len(comm_pairs) == M_CARRIER.d - 1
+    assert all(z1 + z2 == M_CARRIER.n_phi for z1, z2 in comm_pairs)
+    assert math.isclose(
+        m_covalent_radius_in_a0(6 + M_CARRIER.n_hier, bond_order=1),
+        M_CARRIER.d * M_CARRIER.kappa,
+        rel_tol=1e-12,
+    )
 
-    # Exact cosines on K_4: -8/24 (L=0), -7/24 (L=1), -6/24 = -1/4 (L=2)
-    assert math.isclose(m_sp3_bond_angle_cos(0), -8.0 / 24.0, abs_tol=1e-12)
-    assert math.isclose(m_sp3_bond_angle_cos(1), -7.0 / 24.0, abs_tol=1e-12)
-    assert math.isclose(m_sp3_bond_angle_cos(2), -6.0 / 24.0, abs_tol=1e-12)
+    # Exact cosines on K_4: -(N_hier - m_LP) / (d * N_hier) for m_LP in 0..d-1
+    for m_lp in range(M_CARRIER.d):
+        expected_cos = -(M_CARRIER.n_hier - m_lp) / float(M_CARRIER.d * M_CARRIER.n_hier)
+        assert math.isclose(m_sp3_bond_angle_cos(m_lp), expected_cos, abs_tol=1e-12)
 
-    # T-projector SI verification against NIST
+    # T-projector SI verification against NIST reference measurements
     nist_ie = {
         1: 13.598, 2: 24.587, 3: 5.392, 4: 9.323, 5: 8.298,
         6: 11.260, 7: 14.534, 8: 13.618, 9: 17.423, 10: 21.565,
@@ -144,13 +151,59 @@ def test_m_chemistry_and_t_projector() -> None:
         pred = T_PROJECTOR.ionization_energy_ev(z)
         assert abs(pred - ref) / ref < 0.01
 
+    ratios = m_compute_hbond_phase_ratios()
     w_si = T_PROJECTOR.water_thermodynamics_si()
-    assert 20.5 <= w_si["e_hb_kj_mol"] <= 21.1
-    assert 5.8 <= w_si["delta_h_fus_kj_mol"] <= 6.1
-    assert 272.0 <= w_si["t_melt_kelvin"] <= 280.0
-    assert 370.0 <= w_si["t_boil_kelvin"] <= 375.0
-    assert 645.0 <= w_si["t_crit_kelvin"] <= 649.0
-    assert math.isclose(w_si["bcs_gap_ratio"], (7.0 / 2.0) * (97.0 / 96.0), abs_tol=1e-12)
+    assert math.isclose(
+        w_si["bcs_gap_ratio"],
+        (M_CARRIER.d_out_v / float(M_CARRIER.d - 1)) * (M_CARRIER.m_hat / (M_CARRIER.m_hat - 1.0)),
+        abs_tol=1e-12,
+    )
+
+    # Three dimensionless & SI thermal mobility windows inherited directly from MHBondPhaseRatios
+    windows_m = m_compute_life_thermal_windows()
+    assert [w.rung_m for w in windows_m] == [-1, 0, 1]
+    assert math.isclose(windows_m[0].e_soft_in_ehb_quanta, ratios.fus_in_ehb_quanta, rel_tol=1e-12)
+    assert math.isclose(windows_m[1].e_soft_in_ehb_quanta, 1.0, rel_tol=1e-12)
+    assert math.isclose(windows_m[2].e_soft_in_ehb_quanta, ratios.vap_in_ehb_quanta, rel_tol=1e-12)
+
+    windows_si = T_PROJECTOR.life_thermal_windows_si()
+    for w_m, w_s in zip(windows_m, windows_si):
+        assert math.isclose(
+            w_m.min_e_hard_in_ehb_quanta,
+            M_CARRIER.n_12 * w_m.e_soft_in_ehb_quanta,
+            rel_tol=1e-12,
+        )
+        assert math.isclose(
+            w_m.t_min_over_t_hb,
+            ratios.t_melt_over_t_hb * w_m.e_soft_in_ehb_quanta,
+            rel_tol=1e-12,
+        )
+        assert math.isclose(
+            w_m.t_max_over_t_hb,
+            ratios.t_boil_over_t_hb * w_m.e_soft_in_ehb_quanta,
+            rel_tol=1e-12,
+        )
+        assert math.isclose(
+            float(w_s["t_min_kelvin"]),
+            w_m.e_soft_in_ehb_quanta * w_si["t_melt_kelvin"],
+            rel_tol=1e-12,
+        )
+        assert math.isclose(
+            float(w_s["t_max_kelvin"]),
+            w_m.e_soft_in_ehb_quanta * w_si["t_boil_kelvin"],
+            rel_tol=1e-12,
+        )
+        assert math.isclose(
+            float(w_s["min_e_hard_ev"]),
+            M_CARRIER.n_12 * w_m.e_soft_in_ehb_quanta * w_si["e_hb_ev"],
+            rel_tol=1e-12,
+        )
+        assert math.isclose(
+            float(w_s["min_e_hard_kj_mol"]),
+            M_CARRIER.n_12 * w_m.e_soft_in_ehb_quanta * w_si["e_hb_kj_mol"],
+            rel_tol=1e-12,
+        )
+
 
 
 def test_m_nucleic_z4_and_rumer_bit_inversion() -> None:

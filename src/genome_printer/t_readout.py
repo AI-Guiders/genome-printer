@@ -15,10 +15,12 @@ from dataclasses import dataclass
 
 from .m_carrier import M_CARRIER, MCarrierConstants
 from .m_chemistry import (
+    MThermalMobilityWindow,
     m_ionization_ratio_be_h,
     m_covalent_radius_in_a0,
     m_sp3_bond_angle_rad,
     m_compute_hbond_phase_ratios,
+    m_compute_life_thermal_windows,
 )
 from .m_nucleic import MDuplexLatticeState
 from .m_polypeptide import MFoldedChain, MProteinSynthesisSpec
@@ -150,6 +152,30 @@ class TSIBridgeProjector:
             "t_crit_kelvin": ratios.t_crit_over_t_hb * t_hb_k,
             "bcs_gap_ratio": ratios.bcs_gap_ratio,
         }
+
+    def life_thermal_windows_si(self, c: MCarrierConstants = M_CARRIER) -> list[dict[str, float | int]]:
+        """Project the 3 dimensionless M-layer thermal mobility windows (rungs m = -1, 0, +1) to SI (eV, kJ/mol, K)."""
+        ratios = m_compute_hbond_phase_ratios(c=c)
+        e_hb_ev = self.be_h_ev / ratios.n_hb_divisor
+        e_hb_kj = e_hb_ev * self.ev_to_kj_mol
+        t_hb_k = e_hb_ev / self.k_b_ev_per_kelvin
+        out: list[dict[str, float | int]] = []
+        for w in m_compute_life_thermal_windows(c=c):
+            out.append(
+                {
+                    "rung_m": w.rung_m,
+                    "e_soft_ehb_quanta": w.e_soft_in_ehb_quanta,
+                    "e_soft_ev": w.e_soft_in_ehb_quanta * e_hb_ev,
+                    "e_soft_kj_mol": w.e_soft_in_ehb_quanta * e_hb_kj,
+                    "min_e_hard_ehb_quanta": w.min_e_hard_in_ehb_quanta,
+                    "min_e_hard_ev": w.min_e_hard_in_ehb_quanta * e_hb_ev,
+                    "min_e_hard_kj_mol": w.min_e_hard_in_ehb_quanta * e_hb_kj,
+                    "t_min_kelvin": w.t_min_over_t_hb * t_hb_k,
+                    "t_max_kelvin": w.t_max_over_t_hb * t_hb_k,
+                }
+            )
+        return out
+
 
 
 T_PROJECTOR = TSIBridgeProjector()

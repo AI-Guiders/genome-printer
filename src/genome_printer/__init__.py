@@ -29,6 +29,7 @@ from .m_carrier import (
 from .m_chemistry import (
     MSubshellChannel,
     MHBondPhaseRatios,
+    MThermalMobilityWindow,
     m_cuboctahedral_subshells,
     m_ionization_ratio_be_h,
     m_ionization_energy_e0,
@@ -38,6 +39,7 @@ from .m_chemistry import (
     m_sp3_bond_angle_cos,
     m_sp3_bond_angle_rad,
     m_compute_hbond_phase_ratios,
+    m_compute_life_thermal_windows,
 )
 from .m_nucleic import (
     M_FRONTAL_TRACKS,
