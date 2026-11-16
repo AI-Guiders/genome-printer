@@ -36,6 +36,11 @@ from genome_printer import (
     express_gene_locus,
     compute_regulatory_network_matrix_ev,
     step_fcc_morphogen_automaton,
+    trace_bdna_bonds,
+    trace_protein_folding,
+    trace_tf_dna_contacts,
+    trace_ig_synaptic_contacts,
+    format_xray_report,
 )
 
 
@@ -190,3 +195,33 @@ def test_end_to_end_genome_interpreter_on_fcc() -> None:
     out = step_fcc_morphogen_automaton(grid, reg_mat, n_steps=4)
     assert out.shape == (6, 6, 6, 2)
     assert float(np.sum(out[..., 1])) > 0.0
+
+
+def test_xray_bond_tracer() -> None:
+    """Verify X-Ray bond tracing across B-DNA, O(L) protein folding, Major Groove, and Ig locks."""
+    dna_traces = trace_bdna_bonds("ATGC")
+    assert len(dna_traces) == 4
+    assert dna_traces[0].hbond_count == 2 and dna_traces[0].active_track_indices == (0, 1)
+    assert dna_traces[2].hbond_count == 3 and dna_traces[2].active_track_indices == (0, 1, 2)
+
+    tf_protein = "MA" + "C" + "PE" + "C" + "KSFSQSSNLQKH" + "H" + "QRT" + "H" + "G" + "WFQNRRMKWKK"
+    prot_report = trace_protein_folding(tf_protein)
+    assert len(prot_report.bond_events) > 10
+    assert prot_report.total_quanta_ehb > 10
+    assert any(ev.bond_type == "backbone_alpha_i_minus_4" for ev in prot_report.bond_events)
+    assert any(ev.bond_type == "sidechain_hb" for ev in prot_report.bond_events)
+    assert any(ev.bond_type == "disulfide_ss" for ev in prot_report.bond_events)
+    formatted = format_xray_report(prot_report)
+    assert "X-RAY BOND TRACE" in formatted
+
+    tf_contacts = trace_tf_dna_contacts(("R", "Q", "D"), "GAC")
+    assert len(tf_contacts) == 3
+    assert all(c.quanta_ehb >= 1 for c in tf_contacts)
+
+    donor_seq = "MA" + "C" + ("A" * 11) + "W" + "A" + "R" + ("A" * 48) + "C" + "GG"
+    acceptor_seq = "MA" + "C" + ("A" * 11) + "W" + "AAA" + "E" + ("A" * 46) + "C" + "GG"
+    d_lock = scan_ig_synaptic_locks(donor_seq)[0]
+    a_lock = scan_ig_synaptic_locks(acceptor_seq)[0]
+    ig_contacts = trace_ig_synaptic_contacts(d_lock, a_lock)
+    assert len(ig_contacts) == 7
+    assert sum(ev.net_quanta_ehb for ev in ig_contacts) > 0

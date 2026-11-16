@@ -53,6 +53,18 @@ from .interpreter import (
     compute_regulatory_network_matrix_ev,
     step_fcc_morphogen_automaton,
 )
+from .xray import (
+    DNABasePairBondTrace,
+    ProteinBondEvent,
+    ProteinFoldingXRayReport,
+    MajorGrooveContactEvent,
+    SynapticContactEvent,
+    trace_bdna_bonds,
+    trace_protein_folding,
+    trace_tf_dna_contacts,
+    trace_ig_synaptic_contacts,
+    format_xray_report,
+)
 
 __all__ = [
     "FCC_N12_VECTORS",
@@ -94,5 +106,15 @@ __all__ = [
     "express_gene_locus",
     "compute_regulatory_network_matrix_ev",
     "step_fcc_morphogen_automaton",
+    "DNABasePairBondTrace",
+    "ProteinBondEvent",
+    "ProteinFoldingXRayReport",
+    "MajorGrooveContactEvent",
+    "SynapticContactEvent",
+    "trace_bdna_bonds",
+    "trace_protein_folding",
+    "trace_tf_dna_contacts",
+    "trace_ig_synaptic_contacts",
+    "format_xray_report",
 ]
 
