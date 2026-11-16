@@ -19,6 +19,7 @@ from genome_printer import (
     m_ionization_energy_e0,
     m_covalent_radius_in_a0,
     m_covalent_radius_dh,
+    m_find_hydrogen_commensurate_backbone_pairs,
     m_sp3_bond_angle_cos,
     m_compute_hbond_phase_ratios,
     M_FRONTAL_TRACKS,
@@ -124,6 +125,10 @@ def test_m_chemistry_and_t_projector() -> None:
         M_CARRIER.peptide_cn_dh,
         rel_tol=1e-12,
     )
+    # Exactly two p-block square-channel pairs (Z1 + Z2 == N_phi == 13) are commensurate with r_cov(H):
+    # (5, 8) [B-O] and (6, 7) [C-N], while period-3 Si (Z=14) has exact radius 3 * kappa * a_0
+    assert m_find_hydrogen_commensurate_backbone_pairs() == ((5, 8), (6, 7))
+    assert math.isclose(m_covalent_radius_in_a0(14, bond_order=1), 3.0 * M_CARRIER.kappa, rel_tol=1e-12)
 
     # Exact cosines on K_4: -8/24 (L=0), -7/24 (L=1), -6/24 = -1/4 (L=2)
     assert math.isclose(m_sp3_bond_angle_cos(0), -8.0 / 24.0, abs_tol=1e-12)

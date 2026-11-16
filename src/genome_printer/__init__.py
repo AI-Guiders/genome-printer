@@ -34,6 +34,7 @@ from .m_chemistry import (
     m_ionization_energy_e0,
     m_covalent_radius_in_a0,
     m_covalent_radius_dh,
+    m_find_hydrogen_commensurate_backbone_pairs,
     m_sp3_bond_angle_cos,
     m_sp3_bond_angle_rad,
     m_compute_hbond_phase_ratios,

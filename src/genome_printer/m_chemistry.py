@@ -67,11 +67,32 @@ def m_covalent_radius_in_a0(z: int, bond_order: int = 1, c: MCarrierConstants = 
         r_single = ((c.d * c.n_phi - 2 * z) / c.n_phi) * c.kappa
     elif 14 <= z <= 16:
         r_p2 = m_covalent_radius_in_a0(z - c.n_hier, bond_order=1, c=c)
-        r_single = r_p2 + (c.n_hier / c.mod_bits) * c.kappa
+        r_single = r_p2 + (c.n_12 / c.n_phi) * c.kappa
     else:
         return 0.0
 
     return r_single * (c.kappa_hex ** (bond_order - 1))
+
+
+def m_find_hydrogen_commensurate_backbone_pairs(
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[tuple[int, int], ...]:
+    """Find all p-block square-channel pairs (Z1 < Z2 in 5..8) whose single-bond length is an exact integer multiple of r_cov(1).
+
+    Because r_cov(Z) / r_cov(1) = (39 - 2*Z) / 13, exact commensurability with the hydrogen
+    cuboctahedron requires (39 - 2*Z1) + (39 - 2*Z2) == 4 * 13 <=> Z1 + Z2 == N_phi == 13,
+    yielding exactly two solutions in channel square_6:
+      - (5, 8) [B-O: prebiotic ribose-stabilizing borate lock & anhydrous high-T polymer twin],
+      - (6, 7) [C-N: aqueous peptide & nucleic-acid backbone in the [T_melt, T_boil] H2O window].
+    """
+    r_h = m_covalent_radius_in_a0(1, bond_order=1, c=c)
+    pairs: list[tuple[int, int]] = []
+    for z1 in range(5, 9):
+        for z2 in range(z1 + 1, 9):
+            ratio = (m_covalent_radius_in_a0(z1, bond_order=1, c=c) + m_covalent_radius_in_a0(z2, bond_order=1, c=c)) / r_h
+            if abs(ratio - round(ratio)) < 1e-12:
+                pairs.append((z1, z2))
+    return tuple(pairs)
 
 
 def m_ionization_energy_e0(z: int, c: MCarrierConstants = M_CARRIER) -> float:
