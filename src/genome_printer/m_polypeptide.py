@@ -407,13 +407,24 @@ def m_scan_ig_locks(
 ) -> tuple[MIgLock, ...]:
     """Scan a Z_21 sequence for Ig domains with loop span around N_HB = 63 and 7 cuboctahedral offsets."""
     n = len(seq)
-    thiols = [idx for idx, cls_id in enumerate(seq) if cls_id == 11]
+    # Exclude thiols already coordinated inside C2H2 zinc-finger locks
+    c2h2_thiols: set[int] = set()
+    for zf in m_scan_c2h2_locks(seq, c=c):
+        c2h2_thiols.add(zf.thiol1_idx)
+        c2h2_thiols.add(zf.thiol2_idx)
+
+    thiols = [idx for idx, cls_id in enumerate(seq) if cls_id == 11 and idx not in c2h2_thiols]
     out: list[MIgLock] = []
+    used_thiols: set[int] = set()
 
     for a in range(len(thiols)):
         cb = thiols[a]
+        if cb in used_thiols:
+            continue
         for b in range(a + 1, len(thiols)):
             cf = thiols[b]
+            if cf in used_thiols:
+                continue
             span = cf - cb
             if not (c.n_shell_2 + 8 <= span <= c.n_hb + c.n_12):
                 continue
@@ -442,6 +453,9 @@ def m_scan_ig_locks(
             )
             sig = tuple(seq[idx] if 0 <= idx < n else 20 for idx in offsets)
             out.append(MIgLock(role, cb, cf, span, w_idx, sig))
+            used_thiols.add(cb)
+            used_thiols.add(cf)
+            break
     return tuple(out)
 
 
@@ -519,18 +533,30 @@ def m_scan_catalytic_triads(
     """Scan a Z_21 sequence for proton-relay catalytic triads (nucleophile + His_14 + acid)."""
     n = len(seq)
     out: list[MCatalyticTriadLock] = []
-    his_positions = [idx for idx, cls_id in enumerate(seq) if cls_id == 14]
+    # Exclude histidines and cysteines already coordinated inside C2H2 or Ig disulfide locks
+    locked_his: set[int] = set()
+    locked_cys: set[int] = set()
+    for zf in m_scan_c2h2_locks(seq, c=c):
+        locked_his.add(zf.his1_idx)
+        locked_his.add(zf.his2_idx)
+        locked_cys.add(zf.thiol1_idx)
+        locked_cys.add(zf.thiol2_idx)
+    for ig in m_scan_ig_locks(seq, c=c):
+        locked_cys.add(ig.thiol_b_idx)
+        locked_cys.add(ig.thiol_f_idx)
+
+    his_positions = [idx for idx, cls_id in enumerate(seq) if cls_id == 14 and idx not in locked_his]
 
     for h_idx in his_positions:
-        # Search for nucleophile (1, 7, 11) and acid (18, 19) within the 2nd shell window +-N_shell(2)=42
-        w_lo = max(0, h_idx - c.n_shell_2)
-        w_hi = min(n, h_idx + c.n_shell_2 + 1)
+        # Search for free nucleophile (1, 7, 11) and acid (18, 19) within the 1st shell window +-|N_12|=12
+        w_lo = max(0, h_idx - c.n_12)
+        w_hi = min(n, h_idx + c.n_12 + 1)
         nuc_idx = -1
         acid_idx = -1
         for k in range(w_lo, w_hi):
             if k == h_idx:
                 continue
-            if nuc_idx == -1 and seq[k] in (1, 7, 11):
+            if nuc_idx == -1 and seq[k] in (1, 7, 11) and k not in locked_cys:
                 nuc_idx = k
             if acid_idx == -1 and seq[k] in (18, 19):
                 acid_idx = k
@@ -570,14 +596,23 @@ def m_scan_transmembrane_rods(
     i = 0
     while i <= n - span:
         window = seq[i : i + span]
-        # Nonpolar classes have only 0 in their hb_fork and no cyclic hinge
+        # Nonpolar classes have only 0 in their hb_fork and no cyclic hinge;
+        # branched hydrophobic lipid-anchoring sidechains have len(hb_fork) >= d - 1 = 2
         nonpolar_cnt = sum(
             1
             for cls_id in window
             if M_CLASS_21_SPECS[cls_id].cyclic_hinge == 0
+            and len(M_CLASS_21_SPECS[cls_id].hb_fork) >= 1
             and all(s == 0 for s in M_CLASS_21_SPECS[cls_id].hb_fork)
         )
-        if nonpolar_cnt * 4 >= 3 * span:
+        branched_hydrophobic_cnt = sum(
+            1
+            for cls_id in window
+            if M_CLASS_21_SPECS[cls_id].cyclic_hinge == 0
+            and len(M_CLASS_21_SPECS[cls_id].hb_fork) >= (c.d - 1)
+            and all(s == 0 for s in M_CLASS_21_SPECS[cls_id].hb_fork)
+        )
+        if nonpolar_cnt * 4 >= 3 * span and branched_hydrophobic_cnt >= c.n_12:
             out.append(MTransmembraneHelixLock(i, i + span - 1, span, nonpolar_cnt / float(span)))
             i += span
         else:
@@ -657,6 +692,8 @@ def m_synthesize_protein_for_spec(
 
     # 6. 63-residue (N_HB = 63) disulfide-locked Ig synaptic domain (+1 donor or -1 acceptor)
     if spec.ig_synaptic_polarity in (+1, -1):
+        # Ensure at least N_phi = 13 spacing from any preceding C2H2 thiol (11)
+        seq.extend([3] * c.n_12)
         ig_block = [3] * 66
         cb_rel = 1
         cf_rel = cb_rel + c.n_hb  # 64 (span = 63)
@@ -684,10 +721,12 @@ def m_synthesize_protein_for_spec(
         seq.extend(ig_block)
 
     # 7. Append alpha-helical salt-bridged turns (Ala_3 - Glu_19 - Leu_0 - Ala_3 - Lys_17)
-    #    until |Delta G_fold| >= min_stability_quanta_ehb
+    #    in O(1) passes until |Delta G_fold| >= min_stability_quanta_ehb
     folded = m_fold_chain_cotranslational(seq, c=c)
-    while folded.total_quanta_ehb < spec.min_stability_quanta_ehb:
-        seq.extend([3, 19, 0, 3, 17])
-        folded = m_fold_chain_cotranslational(seq, c=c)
+    deficit = spec.min_stability_quanta_ehb - folded.total_quanta_ehb
+    if deficit > 0:
+        # Each 5-residue turn adds >= d = 3 E_HB quanta (Theorem 3.2)
+        n_turns = (deficit + c.d - 1) // c.d
+        seq.extend([3, 19, 0, 3, 17] * n_turns)
 
     return tuple(seq)

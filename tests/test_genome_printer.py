@@ -325,10 +325,30 @@ def test_de_novo_protein_and_gene_synthesis_with_prescribed_properties() -> None
     assert synth_res.all_constraints_satisfied is True
     assert synth_res.verified_expression.folded_chain.total_quanta_ehb >= 90
     assert synth_res.dna_binding_quanta_verified >= 10
-    assert len(synth_res.verified_expression.c2h2_locks) >= 2
-    assert len(synth_res.verified_expression.trp_pin_locks) >= 1
-    assert len(synth_res.verified_expression.catalytic_triads) >= 1
-    assert len(synth_res.verified_expression.atp_walker_locks) >= 1
-    assert len(synth_res.verified_expression.transmembrane_rods) >= 1
-    assert len(synth_res.verified_expression.ig_locks) >= 1
+    assert len(synth_res.verified_expression.c2h2_locks) == 2
+    assert len(synth_res.verified_expression.trp_pin_locks) == 1
+    assert len(synth_res.verified_expression.catalytic_triads) == 1
+    assert len(synth_res.verified_expression.atp_walker_locks) == 1
+    assert len(synth_res.verified_expression.transmembrane_rods) == 1
+    assert len(synth_res.verified_expression.ig_locks) == 1
     assert "VERIFIED=True" in cert_str
+
+    # Also verify a minimal spec (with all optional locks disabled) has zero false-positive lock detections:
+    min_res, min_cert = synthesize_gene_and_protein_xray(
+        target_dna_triplets=("GCG",),
+        target_homeodomain_core="",
+        require_catalytic_triad=False,
+        require_atp_walker_motor=False,
+        require_transmembrane_rod=False,
+        ig_synaptic_polarity=0,
+        min_stability_quanta_ehb=60,
+    )
+    assert min_res.all_constraints_satisfied is True
+    assert min_res.verified_expression.folded_chain.total_quanta_ehb >= 60
+    assert len(min_res.verified_expression.c2h2_locks) == 1
+    assert len(min_res.verified_expression.trp_pin_locks) == 0
+    assert len(min_res.verified_expression.catalytic_triads) == 0
+    assert len(min_res.verified_expression.atp_walker_locks) == 0
+    assert len(min_res.verified_expression.transmembrane_rods) == 0
+    assert len(min_res.verified_expression.ig_locks) == 0
+    assert "VERIFIED=True" in min_cert

@@ -893,22 +893,23 @@ def m_synthesize_gene_and_protein(
     frame_intact = expressed.class_sequence_z21 == seq_z21
     self_avoiding = len(set(f.fcc_lattice_nodes)) == len(f.fcc_lattice_nodes)
     stability_ok = f.total_quanta_ehb >= spec.min_stability_quanta_ehb
-    c2h2_targets = [lk.target_bases_z4 for lk in expressed.c2h2_locks]
-    c2h2_ok = all(trip in c2h2_targets for trip in spec.target_c2h2_dna_triplets_z4)
+    c2h2_targets = tuple(lk.target_bases_z4 for lk in expressed.c2h2_locks)
+    c2h2_ok = c2h2_targets == spec.target_c2h2_dna_triplets_z4
     trp_ok = (
-        True
+        len(expressed.trp_pin_locks) == 0
         if len(spec.target_trp_pin_core_z4) == 0
         else any(lk.target_core_z4 == spec.target_trp_pin_core_z4 for lk in expressed.trp_pin_locks)
     )
-    triad_ok = True if spec.require_catalytic_triad == 0 else (len(expressed.catalytic_triads) >= 1)
-    walker_ok = True if spec.require_atp_walker_motor == 0 else (len(expressed.atp_walker_locks) >= 1)
-    tm_ok = True if spec.require_transmembrane_rod == 0 else (len(expressed.transmembrane_rods) >= 1)
+    triad_ok = len(expressed.catalytic_triads) == spec.require_catalytic_triad
+    walker_ok = len(expressed.atp_walker_locks) == spec.require_atp_walker_motor
+    tm_ok = len(expressed.transmembrane_rods) == spec.require_transmembrane_rod
     ig_ok = (
-        True
+        len(expressed.ig_locks) == 0
         if spec.ig_synaptic_polarity == 0
-        else any(
-            lk.polarity_role == spec.ig_synaptic_polarity and lk.loop_span == c.n_hb
-            for lk in expressed.ig_locks
+        else (
+            len(expressed.ig_locks) == 1
+            and expressed.ig_locks[0].polarity_role == spec.ig_synaptic_polarity
+            and expressed.ig_locks[0].loop_span == c.n_hb
         )
     )
 
