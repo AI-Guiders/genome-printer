@@ -51,6 +51,14 @@ T_BOND_KIND_NAMES: tuple[str, ...] = (
     "disulfide_ss_bridge",
 )
 
+T_CARRIER_STAGE_NAMES: dict[int, str] = {
+    0: "Zygote_Founder (V=1, E=0)",
+    1: "Solid_Morula_B3 (N_K4>0, chi_3D=1)",
+    2: "Hollow_Vesicle_S2 (N_K4=0, chi_2D=2, beta_2=1)",
+    3: "Hollow_Hex_Tube_S1xI (N_K4=0, chi_2D=0, beta_1=1)",
+    4: "Stratified_Cortical_Column (N_K4=6(L-1), E_Ig=15(L-1))",
+}
+
 
 def encode_dna_to_z4(seq_str: str) -> tuple[int, ...]:
     """Project a T-layer DNA/RNA string into a tuple of 2-bit M-layer registers `b in Z_4`."""
@@ -187,6 +195,28 @@ def format_tissue_xray_table(
     for lam, cnt in sorted(lam_counts.items()):
         lines.append(f"  lamina k={lam:2d} : {cnt:3d} cells")
 
+    if morph.topology_snapshot is not None:
+        s = morph.topology_snapshot
+        stage_name = T_CARRIER_STAGE_NAMES.get(s.carrier_stage_code, "Unknown")
+        lines.append("-" * 92)
+        lines.append(
+            f"  [M-Topology Readout] stage={stage_name} | "
+            f"V={s.v_cells}, E={s.e_contacts}, F_tri={s.f_triangles}, F_sq={s.f_squares_surface}, "
+            f"K4={s.k4_tetrahedra}, chi_2D={s.euler_chi_2d}, "
+            f"Betti=({s.betti_0}, {s.betti_1_open_channels}, {s.betti_2_closed_cavities})"
+        )
+    if morph.growth_trajectory:
+        lines.append("  [Growth Trajectory on FCC N12]:")
+        for snap in morph.growth_trajectory:
+            st_str = T_CARRIER_STAGE_NAMES.get(snap.carrier_stage_code, "Unknown")
+            lines.append(
+                f"    tick {snap.tick:2d}: V={snap.v_cells:2d}, E={snap.e_contacts:3d}, "
+                f"F_tri={snap.f_triangles:3d}, F_sq={snap.f_squares_surface:2d}, "
+                f"K4={snap.k4_tetrahedra:2d}, chi_2D={snap.euler_chi_2d:3d}, "
+                f"Betti=({snap.betti_0},{snap.betti_1_open_channels},{snap.betti_2_closed_cavities}), "
+                f"E_Ig={snap.ig_synapses_count:2d} -> {st_str}"
+            )
+
     if morph.ig_synaptic_network:
         lines.append("-" * 92)
         for syn in morph.ig_synaptic_network[:6]:
@@ -253,4 +283,14 @@ def scan_fasta_and_format_xray(
     if scan.intergenic_dark_spans:
         lines.append("-" * 96)
         lines.append(f"Intergenic non-coding spans (>=12 bp): {list(scan.intergenic_dark_spans)}")
+    if scan.autonomous_tissue is not None and scan.autonomous_tissue.topology_snapshot is not None:
+        s = scan.autonomous_tissue.topology_snapshot
+        st_name = T_CARRIER_STAGE_NAMES.get(s.carrier_stage_code, "Unknown")
+        lines.append("-" * 96)
+        lines.append(
+            f"Autonomous M-Carrier Tissue Grown: {st_name} | "
+            f"V={s.v_cells}, E={s.e_contacts}, F_tri={s.f_triangles}, F_sq={s.f_squares_surface}, "
+            f"K4={s.k4_tetrahedra}, chi_2D={s.euler_chi_2d}, "
+            f"Betti=({s.betti_0},{s.betti_1_open_channels},{s.betti_2_closed_cavities}), E_Ig={s.ig_synapses_count}"
+        )
     return scan, "\n".join(lines)

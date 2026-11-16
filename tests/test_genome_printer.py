@@ -43,6 +43,7 @@ from genome_printer import (
     m_grow_vesicle_s1,
     m_grow_hex_tube,
     m_grow_laminar_column_6,
+    m_grow_tissue_autonomous,
     T_PROJECTOR,
     encode_dna_to_z4,
     decode_z4_to_dna,
@@ -204,23 +205,59 @@ def test_m_tissue_organogenesis_and_fcc_automaton() -> None:
     assert float(np.sum(out[..., 1])) > 0.0
 
     # 1. S_1 vesicle: 12 cells, 24 cuboctahedral edges, 1 central cavity
+    #    Trajectory: Zygote (V=1, code=0) -> Morula B^3 (V=13, E=36, K4=8, code=1) -> Vesicle S^2 (V=12, E=24, F_tri=8, F_sq=6, chi_2D=2, beta_2=1, code=2)
     vesicle = m_grow_vesicle_s1()
     assert len(vesicle.living_cells) == 12
     assert len(vesicle.adhesion_network) == 24
     assert len(vesicle.lumen_nodes) == 1
+    assert len(vesicle.growth_trajectory) == 3
+    assert vesicle.growth_trajectory[0].carrier_stage_code == 0
+    assert vesicle.growth_trajectory[1].v_cells == 13
+    assert vesicle.growth_trajectory[1].k4_tetrahedra == 8
+    assert vesicle.growth_trajectory[1].carrier_stage_code == 1
+    assert vesicle.topology_snapshot is not None
+    assert vesicle.topology_snapshot.f_triangles == 8
+    assert vesicle.topology_snapshot.f_squares_surface == 6
+    assert vesicle.topology_snapshot.k4_tetrahedra == 0
+    assert vesicle.topology_snapshot.euler_chi_2d == 2
+    assert vesicle.topology_snapshot.betti_2_closed_cavities == 1
+    assert vesicle.topology_snapshot.carrier_stage_code == 2
 
-    # 2. N_6 tube: 4 rings x 6 = 24 cells, 4 central cavity nodes
+    # 2. N_6 tube: 4 rings x 6 = 24 cells, 4 central cavity nodes, chi_2D == 0 at every ring r=1..4
     tube = m_grow_hex_tube(axial_rings=4)
     assert len(tube.living_cells) == 24
     assert len(tube.lumen_nodes) == 4
+    assert tube.topology_snapshot is not None
+    assert tube.topology_snapshot.f_triangles == 24
+    assert tube.topology_snapshot.f_squares_surface == 6
+    assert tube.topology_snapshot.k4_tetrahedra == 0
+    assert tube.topology_snapshot.euler_chi_2d == 0
+    assert tube.topology_snapshot.betti_1_open_channels == 1
+    assert tube.topology_snapshot.carrier_stage_code == 3
+    for snap in tube.growth_trajectory:
+        assert snap.euler_chi_2d == 0
+        assert snap.k4_tetrahedra == 0
+        assert snap.carrier_stage_code == 3
 
     # 3. |square|=6 laminar column: 42 = N_shell(2) cells, 41 = Delta_phi_disc divisions,
-    #    147 = N_ball(3) total contacts, 75 inter-lamina Ig synaptic locks
+    #    147 = N_ball(3) total contacts, 75 inter-lamina Ig synaptic locks, 30 K_4 tetrahedra
     col = m_grow_laminar_column_6()
     assert len(col.living_cells) == 42
     assert len(col.division_lineage) == 41
     assert len(col.adhesion_network) == 147
     assert len(col.ig_synaptic_network) == 75
+    assert col.topology_snapshot is not None
+    assert col.topology_snapshot.k4_tetrahedra == 30
+    assert col.topology_snapshot.ig_synapses_count == 75
+    assert col.topology_snapshot.carrier_stage_code == 4
+
+    # 4. Autonomous morphogenesis driven purely by expressed protein locks:
+    #    prod1 carries Trp-pin -> carrier infers D_3d axial symmetry without Ig rescue -> grows Tube (code=3)
+    auto_tube = m_grow_tissue_autonomous([prod1], axial_steps=4)
+    assert auto_tube.topology_snapshot is not None
+    assert auto_tube.topology_snapshot.carrier_stage_code == 3
+    assert auto_tube.topology_snapshot.euler_chi_2d == 0
+
     t_str = format_tissue_xray_table(col)
     assert "TISSUE MORPHOLOGY X-RAY TRACE" in t_str
 

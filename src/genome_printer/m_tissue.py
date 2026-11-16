@@ -217,8 +217,35 @@ class MCavitationEvent:
 
 
 @dataclass(frozen=True)
+class MTissueTopologySnapshot:
+    """Pure M-layer simplicial and Betti/Euler topological invariants on FCC N12 at a growth tick.
+
+    Carrier stage code (`carrier_stage_code`, inferred strictly from M-invariants):
+      0: Single founder zygote / progenitor (`V = 1, E = 0`)
+      1: Solid 3D morula ball `B^3` (`N_K4 > 0, V_lumen = 0, E_Ig = 0`)
+      2: Hollow spherical vesicle `S^2` (`N_K4 = 0, chi_2D = 2, beta_2 >= 1`)
+      3: Hollow cylindrical tube `S^1 x I` (`N_K4 = 0, chi_2D = 0, V_lumen >= 1`)
+      4: Stratified 3D laminar column (`E_Ig > 0` or planar 7-cell wheel `V = 7, E = 12, V_lumen = 0`)
+    """
+
+    tick: int
+    v_cells: int
+    e_contacts: int
+    f_triangles: int
+    f_squares_surface: int
+    k4_tetrahedra: int
+    euler_chi_2d: int
+    betti_0: int
+    betti_1_open_channels: int
+    betti_2_closed_cavities: int
+    lumen_nodes_count: int
+    ig_synapses_count: int
+    carrier_stage_code: int
+
+
+@dataclass(frozen=True)
 class MTissueMorphology:
-    """Complete M-layer 3D tissue structure and developmental trace in native units."""
+    """Complete M-layer 3D tissue structure, developmental trace, and topological telemetry."""
 
     morphology_code: int  # 0: S_1 vesicle, 1: N_6 tube, 2: |square|=6 cortical column
     n_laminae: int
@@ -230,6 +257,8 @@ class MTissueMorphology:
     lumen_nodes: tuple[tuple[int, int, int], ...]
     total_quanta_ehb: int
     total_energy_e0: float
+    topology_snapshot: MTissueTopologySnapshot | None = None
+    growth_trajectory: tuple[MTissueTopologySnapshot, ...] = ()
 
 
 def m_octant_mask(pos_ijk: tuple[int, int, int], center_ijk: tuple[int, int, int] = (0, 0, 0)) -> int:
@@ -314,12 +343,154 @@ def _m_build_adhesion_network(
     return all_contacts, ig_contacts
 
 
+def m_analyze_tissue_topology(
+    cells: tuple[MCellNode, ...] | list[MCellNode],
+    adhesion: tuple[MCellContact, ...] | list[MCellContact],
+    synapses: tuple[MCellContact, ...] | list[MCellContact],
+    lumen_nodes: tuple[tuple[int, int, int], ...] | list[tuple[int, int, int]],
+    tick: int = 0,
+    c: MCarrierConstants = M_CARRIER,
+) -> MTissueTopologySnapshot:
+    """Compute intrinsic simplicial, Euler, and Betti topological invariants on the FCC N12 graph."""
+    v_cnt = len(cells)
+    e_cnt = len(adhesion)
+    if v_cnt == 0:
+        return MTissueTopologySnapshot(tick, 0, 0, 0, 0, 0, 0, 0, 0, 0, len(lumen_nodes), 0, 0)
+
+    ids = [cell.cell_id for cell in cells]
+    pos_by_id = {cell.cell_id: cell.position_ijk for cell in cells}
+    pos_set = set(pos_by_id.values())
+    adj: dict[int, set[int]] = {cid: set() for cid in ids}
+    for ev in adhesion:
+        adj[ev.cell_a_id].add(ev.cell_b_id)
+        adj[ev.cell_b_id].add(ev.cell_a_id)
+
+    # Connected components beta_0 via BFS
+    visited: set[int] = set()
+    beta_0 = 0
+    for start_id in ids:
+        if start_id in visited:
+            continue
+        beta_0 += 1
+        queue = [start_id]
+        visited.add(start_id)
+        while queue:
+            cur = queue.pop()
+            for nb in adj[cur]:
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append(nb)
+
+    # 3-cliques (triangles F_triangle) and 4-cliques (solid tetrahedra K_4)
+    tris: list[tuple[int, int, int]] = []
+    n_ids = len(ids)
+    for i in range(n_ids):
+        u = ids[i]
+        for j in range(i + 1, n_ids):
+            v = ids[j]
+            if v not in adj[u]:
+                continue
+            for k in range(j + 1, n_ids):
+                w = ids[k]
+                if w in adj[u] and w in adj[v]:
+                    tris.append((u, v, w))
+
+    f_tri = len(tris)
+    id_to_idx = {cid: idx for idx, cid in enumerate(ids)}
+    k4_cnt = 0
+    for u, v, w in tris:
+        start_m = id_to_idx[w] + 1
+        for m_idx in range(start_m, n_ids):
+            q = ids[m_idx]
+            if q in adj[u] and q in adj[v] and q in adj[w]:
+                k4_cnt += 1
+
+    # Uncapped surface squares F_square (4-cycles of side sqrt(2) and diagonal 2 with no central apex)
+    squares_set: set[tuple[int, int, int, int]] = set()
+    for a in ids:
+        pa = pos_by_id[a]
+        for b in adj[a]:
+            pb = pos_by_id[b]
+            for d_node in adj[b]:
+                if d_node == a:
+                    continue
+                pd = pos_by_id[d_node]
+                diag_ad = (pa[0] - pd[0]) ** 2 + (pa[1] - pd[1]) ** 2 + (pa[2] - pd[2]) ** 2
+                if diag_ad != 4:
+                    continue
+                for g_node in adj[d_node]:
+                    if g_node == b or g_node not in adj[a]:
+                        continue
+                    pg = pos_by_id[g_node]
+                    diag_bg = (pb[0] - pg[0]) ** 2 + (pb[1] - pg[1]) ** 2 + (pb[2] - pg[2]) ** 2
+                    if diag_bg != 4:
+                        continue
+                    # Check whether a living apex cell in V_living bonds to all 4 corners
+                    has_living_apex = any(
+                        (ap in adj[a] and ap in adj[b] and ap in adj[d_node] and ap in adj[g_node])
+                        for ap in adj[a]
+                    )
+                    if not has_living_apex:
+                        squares_set.add(tuple(sorted((a, b, d_node, g_node))))
+
+    f_sq = len(squares_set)
+    chi_2d = v_cnt - e_cnt + f_tri + f_sq
+
+    # Classify lumen nodes into 12/12 closed 0D cavities (beta_2) vs 6/6 open 1D channels (beta_1)
+    closed_cavities = 0
+    open_ring_lumens = 0
+    for lx, ly, lz in lumen_nodes:
+        enc_12 = sum(
+            1
+            for k in range(c.n_12)
+            if (lx + int(FCC_N12_VECTORS[k, 2]), ly + int(FCC_N12_VECTORS[k, 1]), lz + int(FCC_N12_VECTORS[k, 0]))
+            in pos_set
+        )
+        if enc_12 == c.n_12:
+            closed_cavities += 1
+        else:
+            open_ring_lumens += 1
+
+    beta_2 = closed_cavities
+    beta_1 = 1 if (k4_cnt == 0 and chi_2d == 0 and open_ring_lumens > 0) else 0
+    ig_cnt = len(synapses)
+
+    # Carrier self-classification purely from topological invariants on FCC N12:
+    if v_cnt <= 1 and e_cnt == 0:
+        stage_code = 0  # Single founder zygote / progenitor
+    elif k4_cnt > 0 and len(lumen_nodes) == 0 and ig_cnt == 0:
+        stage_code = 1  # Solid 3D morula ball B^3 (chi_3d = 1, N_K4 = 8)
+    elif k4_cnt == 0 and chi_2d == 2 and beta_2 >= 1:
+        stage_code = 2  # Hollow spherical vesicle S^2 (chi_2d = 2, beta_2 = 1)
+    elif k4_cnt == 0 and chi_2d == 0 and len(lumen_nodes) >= 1:
+        stage_code = 3  # Hollow cylindrical tube S^1 x I (chi_2d = 0, beta_1 = 1)
+    else:
+        stage_code = 4  # Stratified 3D laminar column (E_Ig > 0 or initial 7-cell wheel)
+
+    return MTissueTopologySnapshot(
+        tick=tick,
+        v_cells=v_cnt,
+        e_contacts=e_cnt,
+        f_triangles=f_tri,
+        f_squares_surface=f_sq,
+        k4_tetrahedra=k4_cnt,
+        euler_chi_2d=chi_2d,
+        betti_0=beta_0,
+        betti_1_open_channels=beta_1,
+        betti_2_closed_cavities=beta_2,
+        lumen_nodes_count=len(lumen_nodes),
+        ig_synapses_count=ig_cnt,
+        carrier_stage_code=stage_code,
+    )
+
+
 def m_grow_vesicle_s1(c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
     """Grow a hollow S_1 cuboctahedral vesicle (N_shell(1)=12 cells, 24 edges) in native M units."""
     fork_d3 = (+1, -1, +1)
     founder = MCellNode(0, -1, 0, (0, 0, 0), m_octant_mask((0, 0, 0)), 0, (0,), fork_d3, None, 24)
     cells: list[MCellNode] = [founder]
     divisions: list[MDivisionEvent] = []
+    traj: list[MTissueTopologySnapshot] = [m_analyze_tissue_topology(cells, (), (), (), tick=0, c=c)]
     next_id = 1
 
     for idx in range(c.n_12):
@@ -333,6 +504,9 @@ def m_grow_vesicle_s1(c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
         )
         divisions.append(MDivisionEvent(1, 0, next_id, (0, 0, 0), pos, pos, in_111, 1, c.atp_e0))
         next_id += 1
+
+    adh_morula, syn_morula = _m_build_adhesion_network(cells, c=c)
+    traj.append(m_analyze_tissue_topology(cells, adh_morula, syn_morula, (), tick=1, c=c))
 
     pos_set = {cell.position_ijk for cell in cells}
     cavitations: list[MCavitationEvent] = []
@@ -354,9 +528,22 @@ def m_grow_vesicle_s1(c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
             living.append(cell)
 
     adhesion, synapses = _m_build_adhesion_network(living, c=c)
+    final_snap = m_analyze_tissue_topology(living, adhesion, synapses, lumen, tick=2, c=c)
+    traj.append(final_snap)
     tot_q = sum(ev.quanta_ehb for ev in adhesion)
     return MTissueMorphology(
-        0, 1, tuple(living), tuple(divisions), tuple(cavitations), tuple(adhesion), tuple(synapses), tuple(lumen), tot_q, -tot_q * c.e_hb_e0
+        0,
+        1,
+        tuple(living),
+        tuple(divisions),
+        tuple(cavitations),
+        tuple(adhesion),
+        tuple(synapses),
+        tuple(lumen),
+        tot_q,
+        -tot_q * c.e_hb_e0,
+        final_snap,
+        tuple(traj),
     )
 
 
@@ -367,6 +554,7 @@ def m_grow_hex_tube(axial_rings: int = 4, c: MCarrierConstants = M_CARRIER) -> M
     divisions: list[MDivisionEvent] = []
     cavitations: list[MCavitationEvent] = []
     lumen: list[tuple[int, int, int]] = []
+    traj: list[MTissueTopologySnapshot] = []
     next_id = 0
 
     for r_idx in range(axial_rings):
@@ -391,11 +579,25 @@ def m_grow_hex_tube(axial_rings: int = 4, c: MCarrierConstants = M_CARRIER) -> M
             next_id += 1
 
         cavitations.append(MCavitationEvent(r_idx + 2, core_id, center, c.n_6))
+        adh_step, syn_step = _m_build_adhesion_network(cells, c=c)
+        traj.append(m_analyze_tissue_topology(cells, adh_step, syn_step, lumen, tick=r_idx + 1, c=c))
 
     adhesion, synapses = _m_build_adhesion_network(cells, c=c)
+    final_snap = traj[-1] if traj else m_analyze_tissue_topology(cells, adhesion, synapses, lumen, tick=0, c=c)
     tot_q = sum(ev.quanta_ehb for ev in adhesion)
     return MTissueMorphology(
-        1, axial_rings, tuple(cells), tuple(divisions), tuple(cavitations), tuple(adhesion), tuple(synapses), tuple(lumen), tot_q, -tot_q * c.e_hb_e0
+        1,
+        axial_rings,
+        tuple(cells),
+        tuple(divisions),
+        tuple(cavitations),
+        tuple(adhesion),
+        tuple(synapses),
+        tuple(lumen),
+        tot_q,
+        -tot_q * c.e_hb_e0,
+        final_snap,
+        tuple(traj),
     )
 
 
@@ -407,6 +609,7 @@ def m_grow_laminar_column_6(c: MCarrierConstants = M_CARRIER) -> MTissueMorpholo
 
     cells: list[MCellNode] = []
     divisions: list[MDivisionEvent] = []
+    traj: list[MTissueTopologySnapshot] = []
     next_id = 0
     vertical_step = (1, 1, 0)
     prev_center_id = -1
@@ -442,11 +645,72 @@ def m_grow_laminar_column_6(c: MCarrierConstants = M_CARRIER) -> MTissueMorpholo
             )
             next_id += 1
 
+        adh_step, syn_step = _m_build_adhesion_network(cells, c=c)
+        traj.append(m_analyze_tissue_topology(cells, adh_step, syn_step, (), tick=l_idx + 1, c=c))
+
     adhesion, synapses = _m_build_adhesion_network(cells, c=c)
+    final_snap = traj[-1] if traj else m_analyze_tissue_topology(cells, adhesion, synapses, (), tick=0, c=c)
     tot_q = sum(ev.quanta_ehb for ev in adhesion)
     return MTissueMorphology(
-        2, n_layers, tuple(cells), tuple(divisions), (), tuple(adhesion), tuple(synapses), (), tot_q, -tot_q * c.e_hb_e0
+        2,
+        n_layers,
+        tuple(cells),
+        tuple(divisions),
+        (),
+        tuple(adhesion),
+        tuple(synapses),
+        (),
+        tot_q,
+        -tot_q * c.e_hb_e0,
+        final_snap,
+        tuple(traj),
     )
+
+
+def m_infer_proteome_symmetry_mode(
+    expressed_products: tuple[MExpressedLocus, ...] | list[MExpressedLocus],
+) -> tuple[int, int]:
+    """Let the M-carrier infer 12-star symmetry breaking directly from expressed protein locks.
+
+    Returns `(axial_d3d_breaking, ig_synaptic_rescue)`:
+      - `(0, 0)`: Isotropic `O_h` 12-star (no axial TF/TM18 locks, no heterotypic Ig pair)
+                  -> radial `S_1` division + core cavitation -> hollow spherical vesicle (`chi_2D = 2`).
+      - `(1, 0)`: Planar `{111}` + axial `(1,1,0)` `D_3d` breaking (axial TF `Trp-pin`/`C2H2` or `TM18` present,
+                  no complementary `Ig_donor`/`Ig_acceptor` pair) -> planar ring division + core cavitation
+                  -> hollow hexagonal tube (`chi_2D = 0`).
+      - `(1, 1)`: Planar `{111}` + axial `(1,1,0)` `D_3d` breaking WITH complementary `Ig_donor(+1)` and
+                  `Ig_acceptor(-1)` locks (`N_HB = 63`) -> inter-lamina synaptic rescue of central hubs
+                  -> solid 6-layer cortical column (`42 = N_shell(2)` cells, `147 = N_ball(3)` contacts).
+    """
+    has_axial = any(
+        (len(p.trp_pin_locks) > 0 or len(p.c2h2_locks) > 0 or len(p.transmembrane_rods) > 0)
+        for p in expressed_products
+    )
+    has_ig_donor = any(
+        ig.polarity_role == +1 and ig.loop_span == 63 for p in expressed_products for ig in p.ig_locks
+    )
+    has_ig_acceptor = any(
+        ig.polarity_role == -1 and ig.loop_span == 63 for p in expressed_products for ig in p.ig_locks
+    )
+    if has_ig_donor and has_ig_acceptor:
+        return 1, 1
+    if has_axial:
+        return 1, 0
+    return 0, 0
+
+
+def m_grow_tissue_autonomous(
+    expressed_products: tuple[MExpressedLocus, ...] | list[MExpressedLocus],
+    axial_steps: int = 4,
+    c: MCarrierConstants = M_CARRIER,
+) -> MTissueMorphology:
+    """Single autonomous M-layer morphogenesis automaton driven purely by expressed protein locks."""
+    axial_flag, ig_rescue_flag = m_infer_proteome_symmetry_mode(expressed_products)
+    if axial_flag == 0:
+        return m_grow_vesicle_s1(c=c)
+    if ig_rescue_flag == 0:
+        return m_grow_hex_tube(axial_rings=axial_steps, c=c)
+    return m_grow_laminar_column_6(c=c)
 
 
 @dataclass(frozen=True)
@@ -463,6 +727,7 @@ class MChromosomeScanResult:
     unannotated_lock_free_loci: tuple[int, ...]  # Folded ORFs lacking any known structural lock
     orphan_promoter_positions: tuple[int, ...]  # Open Major Groove cores (TAAT/TGTTT) with no reader
     intergenic_dark_spans: tuple[tuple[int, int], ...]  # Non-coding spans outside discovered loci
+    autonomous_tissue: MTissueMorphology | None = None  # Carrier-inferred 3D tissue morphology
 
 
 def m_scan_chromosome_de_novo(
@@ -566,6 +831,7 @@ def m_scan_chromosome_de_novo(
     if d_start != -1 and (n - d_start) >= c.n_12:
         dark_spans.append((d_start, n - 1))
 
+    auto_morph = m_grow_tissue_autonomous(products, c=c)
     return MChromosomeScanResult(
         genome_length_bp=n,
         open_chromatin_bp_count=open_bp,
@@ -576,4 +842,5 @@ def m_scan_chromosome_de_novo(
         unannotated_lock_free_loci=tuple(lock_free_ids),
         orphan_promoter_positions=tuple(orphan_pos),
         intergenic_dark_spans=tuple(dark_spans),
+        autonomous_tissue=auto_morph,
     )
