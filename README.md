@@ -1,28 +1,23 @@
-# Genome Printer (v2.0 — Clean Cuboctahedral FCC N₁₂ Edition)
+# Genome Printer (v3.0 — Strict Two-Layer $\mathcal{M} \to \mathcal{T}$ Cuboctahedral FCC $N_{12}$ Architecture)
 
-Parameter-free cellular-automaton genome interpreter, B-DNA Major Groove reader, and $O(1)$-per-residue co-translational protein folder built strictly on the discrete geometry of the cuboctahedral **FCC $N_{12}$** carrier (`mt-lattice-fluid`, Volumes 5–7 of *«Кипящий океан»*).
+Parameter-free cellular-automaton genome interpreter, $O(1)$-per-residue polypeptide folder, and 3D tissue morphogenesis engine built strictly on the two-layer $(\mathcal{M}, \mathcal{T}, \mathcal{B})$ architecture of *«Кипящий океан»* (`mt-lattice-fluid`, Volumes 1–7).
 
-## Core Principles (Zero Fitted Parameters)
+## Strict Separation of Layers ($\mathcal{M}$ vs $\mathcal{T}$)
 
-1. **Scale-Cancellation Bridge (`constants.py`, `chemistry.py`):**
-   - Spatial dimension $d = 3$, cuboctahedral star $|N_{12}| = 12$, sphere ratio $\kappa = R_{\mathrm{in}}/R_{\mathrm{out}} = 1/\sqrt{2}$, hexagonal $\{111\}$ slice ratio $\kappa_{\mathrm{hex}} = \sqrt{3}/2$.
-   - Bekenstein cell bit budget $\lfloor B_V \rfloor = \lfloor 2\pi/\ln 2 \rfloor = 9\text{ bits}$ ($\mathbb{Z}_{512}$ phase ring, $N_{\mathrm{hier}} = 8$, $\mathrm{frac\_bits} = 6$, $N_{\mathrm{HB}} = 2^6 - 1 = 63$, $N_\varphi = 1 + |N_{12}| = 13$).
-   - Universal hydrogen-bond quantum:
-     $$E_{\mathrm{HB}} = \frac{D_0(\text{H}_2)}{\kappa^2 N_{\mathrm{shell}}(2)} = \frac{BE_H}{63} \approx 0.2160\text{ eV} \approx 20.84\text{ kJ/mol}.$$
-   - Exact commensurability of the peptide $\text{C–N}$ bond with the hydrogen lattice:
-     $$R(\text{C–N}) = r_{\mathrm{cov}}(6) + r_{\mathrm{cov}}(7) = \frac{27 + 25}{13}\kappa a_0 = 4\kappa a_0 = 2 R_e(\text{H}_2) \approx 1.497\text{ \AA}.$$
+1. **Primary Carrier Layer $\mathcal{M}$ (`m_carrier.py`, `m_chemistry.py`, `m_nucleic.py`, `m_polypeptide.py`, `m_tissue.py`):**
+   - **Zero human string literals, zero IUPAC letters, zero SI dimensional constants** (enforced via AST inspection by the `M_layer_purity` gate in `verify_genome_printer.py`).
+   - All lengths, times, and energies are expressed directly in the closed native mechanical ladder of the cell $(dh = 1,\ dt = 1,\ s_0 = \tfrac{1}{2})$:
+     $$c_0 = \frac{dh}{dt} = 1,\quad c = \kappa c_0 = \frac{1}{\sqrt{2}},\quad E_0 = \frac{s_0}{dt},\quad p_0 = \frac{s_0}{dh},\quad F_0 = \frac{s_0}{dh\cdot dt},\quad m_{\mathrm{arg}} = \frac{2s_0 dt}{dh^2}.$$
+   - From $\hat M = 1 + |N_{12}| N_{\mathrm{hier}} = 97$, $d_{\mathrm{soft}} = 7$, and $\kappa = 1/\sqrt{2}$, the carrier derives $\alpha_{\mathrm{fs}} \approx 1/137.03599919$, the electroweak scale $v = r^{-1/2}\alpha_{\mathrm{fs}}^8 E_0$, the electron mass $m_e = \alpha_{\mathrm{fs}}^2 m_H / N_\varphi$, the Compton step count $N_c$, the integer Bohr step count $N_{a0} = \mathrm{round}(N_c/\alpha_{\mathrm{fs}}) \in \mathbb{Z}$ ($a_0 = N_{a0}\cdot dh$, atomic packing $N_{\mathrm{pack}} = N_{a0}^3 \in \mathbb{Z}$), the Hydrogen binding energy $BE_H = \frac{\alpha_{\mathrm{fs}}}{2\kappa N_{a0}}E_0$, and the universal hydrogen-bond quantum:
+     $$E_{\mathrm{HB}} = \frac{BE_H}{N_{\mathrm{HB}}} = \frac{BE_H}{63} = \frac{\alpha_{\mathrm{fs}}}{2\kappa N_{\mathrm{HB}} N_{a0}}\,E_0,\qquad \Delta G_{\mathrm{ATP}} = (d-1)\,E_{\mathrm{HB}} = 2\,E_{\mathrm{HB}}.$$
+   - **Nucleic registers ($\mathbb{Z}_4$, $\mathbb{Z}_{16}$, $\mathbb{Z}_{64}$):** Each nucleobase tile in the $\{111\}$ slice is a 2-bit integer $b \in \mathbb{Z}_4 = \{0, 1, 2, 3\}$. Watson–Crick complementation is bitwise XOR `b ^ 2`; Rumer's antisymmetry transformation on a 4-bit dinucleotide stem $s \in \mathbb{Z}_{16}$ is bitwise inversion `s ^ 0xF`! Each 6-bit triplet $c \in \mathbb{Z}_{64}$ ($\mathrm{frac\_bits} = 6$) maps deterministically to one of $N_{\mathrm{shell}}(2)/2 = 21$ second-shell classes $a \in \mathbb{Z}_{21}$.
+   - **$O(1)$ Folding & 3D Morphogenesis ($\mathbb{Z}_3$, $\mathbb{Z}_8$):** Each residue selects its $K_4$ groove $g \in \mathbb{Z}_3 = \{0, 1, 2\}$ in $O(1)$ local operations ($\le 36 L \in \mathrm{P}$). On Floor $k = 12\ldots 13$, cells occupy rhombic dodecahedra on the 3D `FCC N12` lattice with 3-bit octant masks $\mathrm{mask}_3 \in \mathbb{Z}_8$ and integer lamina indices $k \in \mathbb{Z}_{\ge 0}$:
+     - $S_1$ cuboctahedral vesicle: $N_{\mathrm{shell}}(1) = 12$ cells, $|E_{\mathrm{cuboct}}| = 24$ contacts, $1$ central cavity;
+     - $N_6$ hexagonal tube: stacked $\{111\}$ rings with axial lumen cavitation;
+     - $|\square| = 6$-lamina column: $6 \times 7 = 42 = N_{\mathrm{shell}}(2)$ cells, $41 = \Delta\varphi_{\mathrm{disc}}$ divisions, $147 = N_{\mathrm{ball}}(3)$ total contacts, and $75$ inter-lamina `Ig` synaptic locks.
 
-2. **B-DNA Duplex, Major Groove 4-Slot Barcode, and 147 bp Nucleosome (`dna.py`):**
-   - $d = 3$ frontal Watson–Crick H-bond tracks ($E(\text{G–C}) = 3 E_{\mathrm{HB}}$, $E(\text{A–T}) = 2 E_{\mathrm{HB}}$).
-   - $|K_4| = 4$ rear Major Groove slots (`A-T -> [-,+,-,M]`, `T-A -> [M,-,+,-]`, `G-C -> [-,-,+,0]`, `C-G -> [0,+,-,-]`) enabling $O(1)$ sequence readout without duplex unwinding.
-   - Axial stacking step $h_{\mathrm{stack}} = \lfloor B_V \rfloor \kappa a_0 = 9\kappa a_0 \approx 3.368\text{ \AA}$, helical period $n_{\mathrm{turn}} = |N_{12}| - 2 = 10\text{ bp}$, and nucleosome capacity $N_{\mathrm{nuc}} = N_{\mathrm{ball}}(3) = 1 + 12 + 42 + 92 = 147\text{ bp}$.
-
-3. **Universal Genetic Code $64 \to 21 = N_{\mathrm{shell}}(2)/2$ and Rumer's Partition (`genetic_code.py`):**
-   - $4^3 = 64 = 2^{\mathrm{frac\_bits}} = N_{\mathrm{HB}} + 1$ triplets map to $21 = N_{\mathrm{shell}}(2)/2$ semantic classes via Rumer's $8_{\mathrm{Octet\ I}} + (12_{\mathrm{Octet\ II}} + 1_{\mathrm{Stop}}) = 21$ partition.
-
-4. **$O(1)$-per-Residue Co-Translational Folding and Structural Locks (`folding.py`, `locks.py`):**
-   - Resolves Levinthal's paradox in class $\mathrm{P}$ ($O(L)$ time, $\le 36 L$ operations): each residue selects one of $d = 3$ discrete $K_4$ grooves (`alpha` $3.6_{13}$ helix with $n_\alpha = 18/5 = 3.6$, `beta` $\{111\}$ sheet, or `turn`).
-   - Deterministic recognition of `C2H2` zinc fingers ($|N_{12}| = 12$ loop), Homeodomain/Forkhead `Trp`-pins ($d_{\mathrm{in}}(\square) = 4$), and `Ig` synaptic adhesion locks ($L_{\mathrm{loop}} = N_{\mathrm{HB}} = 63$).
+2. **Laboratory Readout Projector $\mathcal{B}\colon \mathcal{M} \leftrightarrow \mathcal{T}$ (`t_readout.py`):**
+   - The sole module containing human IUPAC symbols (`T/U, C, A, G`, 20 amino acid letters), SI calibration anchors (`Å`, `eV`, `kJ/mol`, `K`), and X-Ray report tables.
 
 ## Verification
 
