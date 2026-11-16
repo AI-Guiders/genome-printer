@@ -1,0 +1,3 @@
+[submodule "vendor/mt-lattice-fluid"]
+	path = vendor/mt-lattice-fluid
+	url = https://github.com/AI-Guiders/mt-lattice-fluid.git

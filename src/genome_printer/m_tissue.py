@@ -489,147 +489,74 @@ def m_analyze_tissue_topology(
     )
 
 
-def m_grow_vesicle_s1(c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
-    """Grow a hollow S_1 cuboctahedral vesicle (N_shell(1)=12 cells, 24 edges) in native M units."""
+def _m_run_fcc_morphogenesis_field(
+    axial_d3d_breaking: int,
+    donor_ig: MIgLock | None,
+    acceptor_ig: MIgLock | None,
+    n_laminae: int,
+    c: MCarrierConstants = M_CARRIER,
+) -> MTissueMorphology:
+    """Single branchless M-layer morphogenesis automaton on FCC N12 driven by local trophic survival J(x).
+
+    Every cell node `x` on the FCC N12 lattice obeys the same local law:
+      1. Ray opening mask on the 12-star `N_12 = 6_{111} + 6_{apical/basal}`:
+         - Under isotropic `O_h` (`axial_d3d_breaking == 0`), all 12 rays of `FCC_N12_VECTORS` are open (`w_m = 1`).
+         - Under planar `{111}` symmetry breaking (`axial_d3d_breaking == 1`), only the 6 lateral rays in `{111}`
+           (`dx + dy + dz == 0`) are open for radial ring division around each axial progenitor `l * (1, 1, 0)`.
+      2. Trophic survival flux `J(x)` across the `|N_open|` active division rays:
+         `J(x) = n_free_rays(x) + sum_{y in N_12(x)} q_Ig(x, y)`.
+         When a core progenitor has zero free rays (`n_free_rays == 0`) and zero heterotypic Ig synaptic rescue
+         (`sum q_Ig == 0`), `J(x) == 0` and the cell undergoes cavitation into a lumen node!
+    """
     fork_d3 = (+1, -1, +1)
-    founder = MCellNode(0, -1, 0, (0, 0, 0), m_octant_mask((0, 0, 0)), 0, (0,), fork_d3, None, 24)
-    cells: list[MCellNode] = [founder]
-    divisions: list[MDivisionEvent] = []
-    traj: list[MTissueTopologySnapshot] = [m_analyze_tissue_topology(cells, (), (), (), tick=0, c=c)]
-    next_id = 1
-
-    for idx in range(c.n_12):
-        dz = int(FCC_N12_VECTORS[idx, 0])
-        dy = int(FCC_N12_VECTORS[idx, 1])
-        dx = int(FCC_N12_VECTORS[idx, 2])
-        pos = (dx, dy, dz)
-        in_111 = 1 if (dx + dy + dz) == 0 else 0
-        cells.append(
-            MCellNode(next_id, 0, 1, pos, m_octant_mask(pos), 1, (0, 1), fork_d3, None, c.atp_in_ehb_quanta)
-        )
-        divisions.append(MDivisionEvent(1, 0, next_id, (0, 0, 0), pos, pos, in_111, 1, c.atp_e0))
-        next_id += 1
-
-    adh_morula, syn_morula = _m_build_adhesion_network(cells, c=c)
-    traj.append(m_analyze_tissue_topology(cells, adh_morula, syn_morula, (), tick=1, c=c))
-
-    pos_set = {cell.position_ijk for cell in cells}
-    cavitations: list[MCavitationEvent] = []
-    living: list[MCellNode] = []
-    lumen: list[tuple[int, int, int]] = []
-
-    for cell in cells:
-        x, y, z = cell.position_ijk
-        enc = sum(
-            1
-            for k in range(c.n_12)
-            if (x + int(FCC_N12_VECTORS[k, 2]), y + int(FCC_N12_VECTORS[k, 1]), z + int(FCC_N12_VECTORS[k, 0]))
-            in pos_set
-        )
-        if enc == c.n_12:
-            cavitations.append(MCavitationEvent(2, cell.cell_id, cell.position_ijk, enc))
-            lumen.append(cell.position_ijk)
-        else:
-            living.append(cell)
-
-    adhesion, synapses = _m_build_adhesion_network(living, c=c)
-    final_snap = m_analyze_tissue_topology(living, adhesion, synapses, lumen, tick=2, c=c)
-    traj.append(final_snap)
-    tot_q = sum(ev.quanta_ehb for ev in adhesion)
-    return MTissueMorphology(
-        0,
-        1,
-        tuple(living),
-        tuple(divisions),
-        tuple(cavitations),
-        tuple(adhesion),
-        tuple(synapses),
-        tuple(lumen),
-        tot_q,
-        -tot_q * c.e_hb_e0,
-        final_snap,
-        tuple(traj),
-    )
-
-
-def m_grow_hex_tube(axial_rings: int = 4, c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
-    """Grow a hollow tube by stacking `axial_rings` hexagonal {111} N_6 rings along FCC (1, 1, 0)."""
-    axial_step = (1, 1, 0)
-    cells: list[MCellNode] = []
-    divisions: list[MDivisionEvent] = []
-    cavitations: list[MCavitationEvent] = []
-    lumen: list[tuple[int, int, int]] = []
-    traj: list[MTissueTopologySnapshot] = []
-    next_id = 0
-
-    for r_idx in range(axial_rings):
-        center = (r_idx * axial_step[0], r_idx * axial_step[1], r_idx * axial_step[2])
-        lumen.append(center)
-        core_id = next_id
-        next_id += 1
-
-        for k in range(c.n_6):
-            dx = int(HEX_N6_VECTORS[k, 0])
-            dy = int(HEX_N6_VECTORS[k, 1])
-            dz = int(HEX_N6_VECTORS[k, 2])
-            pos = (center[0] + dx, center[1] + dy, center[2] + dz)
-            fork = (+1, -1, +1) if dz < 0 else ((-1, +1, -1) if dz > 0 else (+1, +1, -1))
-            loci = (0, 1) if dz < 0 else ((0, 2) if dz > 0 else (0, 3))
-            cells.append(
-                MCellNode(next_id, core_id, r_idx + 1, pos, m_octant_mask(pos, center), r_idx, loci, fork, None, 2)
-            )
-            divisions.append(
-                MDivisionEvent(r_idx + 1, core_id, next_id, center, pos, (dx, dy, dz), 1, 1, c.atp_e0)
-            )
-            next_id += 1
-
-        cavitations.append(MCavitationEvent(r_idx + 2, core_id, center, c.n_6))
-        adh_step, syn_step = _m_build_adhesion_network(cells, c=c)
-        traj.append(m_analyze_tissue_topology(cells, adh_step, syn_step, lumen, tick=r_idx + 1, c=c))
-
-    adhesion, synapses = _m_build_adhesion_network(cells, c=c)
-    final_snap = traj[-1] if traj else m_analyze_tissue_topology(cells, adhesion, synapses, lumen, tick=0, c=c)
-    tot_q = sum(ev.quanta_ehb for ev in adhesion)
-    return MTissueMorphology(
-        1,
-        axial_rings,
-        tuple(cells),
-        tuple(divisions),
-        tuple(cavitations),
-        tuple(adhesion),
-        tuple(synapses),
-        tuple(lumen),
-        tot_q,
-        -tot_q * c.e_hb_e0,
-        final_snap,
-        tuple(traj),
-    )
-
-
-def m_grow_laminar_column_6(c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
-    """Grow a |square| = 6-lamina column (6 x 7 = 42 = N_shell(2) cells, 147 = N_ball(3) contacts)."""
-    n_layers = c.n_squares  # 6
-    donor_ig = MIgLock(+1, 2, 2 + c.n_hb, c.n_hb, 14, (0, 2, 0, 19, 1, 10, 3))
-    acceptor_ig = MIgLock(-1, 2, 2 + c.n_hb, c.n_hb, 14, (4, 18, 8, 2, 19, 9, 6))
-
-    cells: list[MCellNode] = []
-    divisions: list[MDivisionEvent] = []
-    traj: list[MTissueTopologySnapshot] = []
-    next_id = 0
     vertical_step = (1, 1, 0)
+    has_ig_pair = 1 if (donor_ig is not None and acceptor_ig is not None) else 0
+
+    # Active radial division vectors: 6 lateral {111} rays if axial_d3d_breaking == 1 else all 12 FCC rays
+    radial_vectors = [
+        (int(FCC_N12_VECTORS[idx, 2]), int(FCC_N12_VECTORS[idx, 1]), int(FCC_N12_VECTORS[idx, 0]))
+        for idx in range(c.n_12)
+        if (axial_d3d_breaking == 0) or ((int(FCC_N12_VECTORS[idx, 2]) + int(FCC_N12_VECTORS[idx, 1]) + int(FCC_N12_VECTORS[idx, 0])) == 0)
+    ]
+    n_active_rays = len(radial_vectors)
+
+    cells: list[MCellNode] = []
+    divisions: list[MDivisionEvent] = []
+    cavitations: list[MCavitationEvent] = []
+    lumen: list[tuple[int, int, int]] = []
+    traj: list[MTissueTopologySnapshot] = []
+    next_id = 0
     prev_center_id = -1
     prev_center_pos = (0, 0, 0)
-    fork_d3 = (+1, -1, +1)
 
-    for l_idx in range(n_layers):
-        center = (l_idx * vertical_step[0], l_idx * vertical_step[1], l_idx * vertical_step[2])
-        ig_lock = donor_ig if (l_idx % 2 == 0) else acceptor_ig
+    for l_idx in range(n_laminae):
+        center = (
+            l_idx * axial_d3d_breaking * vertical_step[0],
+            l_idx * axial_d3d_breaking * vertical_step[1],
+            l_idx * axial_d3d_breaking * vertical_step[2],
+        )
+        ig_lock = (donor_ig if (l_idx % 2 == 0) else acceptor_ig) if has_ig_pair == 1 else None
 
         center_id = next_id
         next_id += 1
-        cells.append(
-            MCellNode(center_id, prev_center_id, l_idx + 1, center, m_octant_mask(center), l_idx, (l_idx,), fork_d3, ig_lock, 4)
+        center_cell = MCellNode(
+            center_id,
+            prev_center_id,
+            l_idx + 1,
+            center,
+            m_octant_mask(center),
+            l_idx,
+            (l_idx,),
+            fork_d3,
+            ig_lock,
+            c.atp_in_ehb_quanta * n_active_rays,
         )
+        cells.append(center_cell)
+
+        if l_idx == 0 and axial_d3d_breaking == 0:
+            # Record founder state at tick 0
+            traj.append(m_analyze_tissue_topology(cells, (), (), (), tick=0, c=c))
+
         if prev_center_id != -1:
             divisions.append(
                 MDivisionEvent(l_idx + 1, prev_center_id, center_id, prev_center_pos, center, vertical_step, 0, 1, c.atp_e0)
@@ -637,34 +564,74 @@ def m_grow_laminar_column_6(c: MCarrierConstants = M_CARRIER) -> MTissueMorpholo
         prev_center_id = center_id
         prev_center_pos = center
 
-        for k in range(c.n_6):
-            dx = int(HEX_N6_VECTORS[k, 0])
-            dy = int(HEX_N6_VECTORS[k, 1])
-            dz = int(HEX_N6_VECTORS[k, 2])
+        # Radial mitotic divisions into all open rays of the active star
+        for dx, dy, dz in radial_vectors:
             pos = (center[0] + dx, center[1] + dy, center[2] + dz)
+            in_111 = 1 if (dx + dy + dz) == 0 else 0
+            fork = (
+                fork_d3
+                if (axial_d3d_breaking == 0 or has_ig_pair == 1)
+                else ((+1, -1, +1) if dz < 0 else ((-1, +1, -1) if dz > 0 else (+1, +1, -1)))
+            )
             cells.append(
-                MCellNode(next_id, center_id, l_idx + 1, pos, m_octant_mask(pos, center), l_idx, (l_idx,), fork_d3, ig_lock, 2)
+                MCellNode(
+                    next_id,
+                    center_id,
+                    l_idx + 1,
+                    pos,
+                    m_octant_mask(pos, center),
+                    l_idx + (1 - axial_d3d_breaking),
+                    (l_idx, 1),
+                    fork,
+                    ig_lock,
+                    c.atp_in_ehb_quanta,
+                )
             )
             divisions.append(
-                MDivisionEvent(l_idx + 1, center_id, next_id, center, pos, (dx, dy, dz), 1, 1, c.atp_e0)
+                MDivisionEvent(l_idx + 1, center_id, next_id, center, pos, (dx, dy, dz), in_111, 1, c.atp_e0)
             )
             next_id += 1
 
+        if axial_d3d_breaking == 0:
+            # Record solid morula B^3 state at tick 1 before trophic cavitation check
+            adh_m, syn_m = _m_build_adhesion_network(cells, c=c)
+            traj.append(m_analyze_tissue_topology(cells, adh_m, syn_m, lumen, tick=1, c=c))
+
+        # Universal trophic survival law J(x) = n_free_active_rays(x) + q_Ig_rescue(x):
+        pos_set = {cell.position_ijk for cell in cells}
+        surviving: list[MCellNode] = []
+        for cell in cells:
+            cx, cy, cz = cell.position_ijk
+            enclosed_active = sum(
+                1 for vx, vy, vz in radial_vectors if (cx + vx, cy + vy, cz + vz) in pos_set
+            )
+            n_free_rays = n_active_rays - enclosed_active
+            q_ig_rescue = c.d if cell.surface_ig_lock is not None else 0
+            trophic_flux_j = n_free_rays + q_ig_rescue
+            if trophic_flux_j == 0:
+                cavitations.append(MCavitationEvent(l_idx + 2, cell.cell_id, cell.position_ijk, enclosed_active))
+                lumen.append(cell.position_ijk)
+            else:
+                surviving.append(cell)
+        cells = surviving
+
         adh_step, syn_step = _m_build_adhesion_network(cells, c=c)
-        traj.append(m_analyze_tissue_topology(cells, adh_step, syn_step, (), tick=l_idx + 1, c=c))
+        snap_tick = 2 if axial_d3d_breaking == 0 else (l_idx + 1)
+        traj.append(m_analyze_tissue_topology(cells, adh_step, syn_step, lumen, tick=snap_tick, c=c))
 
     adhesion, synapses = _m_build_adhesion_network(cells, c=c)
-    final_snap = traj[-1] if traj else m_analyze_tissue_topology(cells, adhesion, synapses, (), tick=0, c=c)
+    final_snap = traj[-1]
     tot_q = sum(ev.quanta_ehb for ev in adhesion)
+    morph_code = axial_d3d_breaking + has_ig_pair
     return MTissueMorphology(
-        2,
-        n_layers,
+        morph_code,
+        n_laminae,
         tuple(cells),
         tuple(divisions),
-        (),
+        tuple(cavitations),
         tuple(adhesion),
         tuple(synapses),
-        (),
+        tuple(lumen),
         tot_q,
         -tot_q * c.e_hb_e0,
         final_snap,
@@ -672,36 +639,44 @@ def m_grow_laminar_column_6(c: MCarrierConstants = M_CARRIER) -> MTissueMorpholo
     )
 
 
+def m_grow_vesicle_s1(c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
+    """Grow a hollow S_1 cuboctahedral vesicle (N_shell(1)=12 cells, 24 edges) via the unified FCC field."""
+    return _m_run_fcc_morphogenesis_field(0, None, None, 1, c=c)
+
+
+def m_grow_hex_tube(axial_rings: int = 4, c: MCarrierConstants = M_CARRIER) -> MTissueMorphology:
+    """Grow a hollow hexagonal tube (S^1 x I) via the unified FCC field."""
+    return _m_run_fcc_morphogenesis_field(1, None, None, axial_rings, c=c)
+
+
+def m_grow_laminar_column_6(
+    donor_ig: MIgLock | None = None,
+    acceptor_ig: MIgLock | None = None,
+    c: MCarrierConstants = M_CARRIER,
+) -> MTissueMorphology:
+    """Grow a |square| = 6-lamina column (42 = N_shell(2) cells, 147 = N_ball(3) contacts) via the unified FCC field."""
+    d_ig = donor_ig if donor_ig is not None else MIgLock(+1, 2, 2 + c.n_hb, c.n_hb, 14, (0, 2, 0, 19, 1, 10, 3))
+    a_ig = acceptor_ig if acceptor_ig is not None else MIgLock(-1, 2, 2 + c.n_hb, c.n_hb, 14, (4, 18, 8, 2, 19, 9, 6))
+    return _m_run_fcc_morphogenesis_field(1, d_ig, a_ig, c.n_squares, c=c)
+
+
 def m_infer_proteome_symmetry_mode(
     expressed_products: tuple[MExpressedLocus, ...] | list[MExpressedLocus],
 ) -> tuple[int, int]:
-    """Let the M-carrier infer 12-star symmetry breaking directly from expressed protein locks.
-
-    Returns `(axial_d3d_breaking, ig_synaptic_rescue)`:
-      - `(0, 0)`: Isotropic `O_h` 12-star (no axial TF/TM18 locks, no heterotypic Ig pair)
-                  -> radial `S_1` division + core cavitation -> hollow spherical vesicle (`chi_2D = 2`).
-      - `(1, 0)`: Planar `{111}` + axial `(1,1,0)` `D_3d` breaking (axial TF `Trp-pin`/`C2H2` or `TM18` present,
-                  no complementary `Ig_donor`/`Ig_acceptor` pair) -> planar ring division + core cavitation
-                  -> hollow hexagonal tube (`chi_2D = 0`).
-      - `(1, 1)`: Planar `{111}` + axial `(1,1,0)` `D_3d` breaking WITH complementary `Ig_donor(+1)` and
-                  `Ig_acceptor(-1)` locks (`N_HB = 63`) -> inter-lamina synaptic rescue of central hubs
-                  -> solid 6-layer cortical column (`42 = N_shell(2)` cells, `147 = N_ball(3)` contacts).
-    """
-    has_axial = any(
+    """Let the M-carrier infer 12-star symmetry breaking directly from expressed protein locks."""
+    has_axial = 1 if any(
         (len(p.trp_pin_locks) > 0 or len(p.c2h2_locks) > 0 or len(p.transmembrane_rods) > 0)
         for p in expressed_products
-    )
-    has_ig_donor = any(
+    ) else 0
+    has_ig_donor = 1 if any(
         ig.polarity_role == +1 and ig.loop_span == 63 for p in expressed_products for ig in p.ig_locks
-    )
-    has_ig_acceptor = any(
+    ) else 0
+    has_ig_acceptor = 1 if any(
         ig.polarity_role == -1 and ig.loop_span == 63 for p in expressed_products for ig in p.ig_locks
-    )
-    if has_ig_donor and has_ig_acceptor:
-        return 1, 1
-    if has_axial:
-        return 1, 0
-    return 0, 0
+    ) else 0
+    ig_pair = has_ig_donor * has_ig_acceptor
+    axial = 1 if (has_axial + ig_pair) > 0 else 0
+    return axial, ig_pair
 
 
 def m_grow_tissue_autonomous(
@@ -709,13 +684,28 @@ def m_grow_tissue_autonomous(
     axial_steps: int = 4,
     c: MCarrierConstants = M_CARRIER,
 ) -> MTissueMorphology:
-    """Single autonomous M-layer morphogenesis automaton driven purely by expressed protein locks."""
-    axial_flag, ig_rescue_flag = m_infer_proteome_symmetry_mode(expressed_products)
-    if axial_flag == 0:
-        return m_grow_vesicle_s1(c=c)
-    if ig_rescue_flag == 0:
-        return m_grow_hex_tube(axial_rings=axial_steps, c=c)
-    return m_grow_laminar_column_6(c=c)
+    """Single branchless M-layer morphogenesis automaton driven directly by expressed protein locks."""
+    axial_flag, ig_pair_flag = m_infer_proteome_symmetry_mode(expressed_products)
+    donor_ig = next(
+        (ig for p in expressed_products for ig in p.ig_locks if ig.polarity_role == +1 and ig.loop_span == c.n_hb),
+        None,
+    )
+    acceptor_ig = next(
+        (ig for p in expressed_products for ig in p.ig_locks if ig.polarity_role == -1 and ig.loop_span == c.n_hb),
+        None,
+    )
+    n_laminae = (
+        1 * (1 - axial_flag)
+        + axial_steps * axial_flag * (1 - ig_pair_flag)
+        + c.n_squares * axial_flag * ig_pair_flag
+    )
+    return _m_run_fcc_morphogenesis_field(
+        axial_flag,
+        donor_ig if ig_pair_flag == 1 else None,
+        acceptor_ig if ig_pair_flag == 1 else None,
+        n_laminae,
+        c=c,
+    )
 
 
 @dataclass(frozen=True)

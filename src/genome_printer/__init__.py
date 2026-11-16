@@ -1,5 +1,16 @@
 """Parameter-free M-to-T cellular-automaton genome interpreter on the FCC N12 cuboctahedral lattice."""
 
+import pathlib
+import sys
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_VENDOR_MT = _REPO_ROOT / "vendor" / "mt-lattice-fluid"
+_SIBLING_MT = _REPO_ROOT.parent / "mt-lattice-fluid"
+for _cand in (_SIBLING_MT, _VENDOR_MT):
+    if (_cand / "mt_ca").is_dir() and str(_cand) not in sys.path:
+        sys.path.insert(0, str(_cand))
+        break
+
 from .m_carrier import (
     FCC_N12_VECTORS,
     HEX_N6_VECTORS,
@@ -8,6 +19,12 @@ from .m_carrier import (
     M_CARRIER,
     fcc_shell_count,
     fcc_ball_count,
+    m_signed_from_mod,
+    m_mod_lane,
+    m_fcc_neighbor_sum_int,
+    m_projected_phi_int,
+    m_step_g_reversible,
+    m_step_g_reverse,
 )
 from .m_chemistry import (
     MSubshellChannel,

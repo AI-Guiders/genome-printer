@@ -93,42 +93,41 @@ class MFoldedChain:
     elementary_ops_count: int  # Strictly <= 36 * L (proving O(L) in class P)
 
 
-def _select_k4_groove_m(seq: tuple[int, ...], idx: int) -> tuple[int, int]:
-    """Select K_4 groove in Z_3 (0, 1, 2) using O(1) local cuboctahedral window."""
+def _select_k4_groove_m(
+    seq: tuple[int, ...],
+    idx: int,
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[int, int]:
+    """Select K_4 groove in Z_3 (0, 1, 2) via argmax of the 3-channel local potential in O(1)."""
     n = len(seq)
     cls_id = seq[idx]
     spec = M_CLASS_21_SPECS[cls_id]
-    ops = 1
-
-    if spec.cyclic_hinge == 1:
-        return 2, ops + 1
-
     w_start = max(0, idx - 4)
     w_end = min(n, idx + 5)
-    votes_0 = 0
-    votes_1 = 0
-    votes_2 = 0
 
+    # Local 3-channel K_4 potential vector E_groove = [E_0, E_1, E_2]
+    pot = [0, 0, 0]
+    ops = 1
     for j in range(w_start, w_end):
         ops += 1
-        g = M_CLASS_21_SPECS[seq[j]].k4_groove
-        if g == 0:
-            votes_0 += 1
-        elif g == 1:
-            votes_1 += 1
-        else:
-            votes_2 += 1
+        pot[M_CLASS_21_SPECS[seq[j]].k4_groove] += 1
 
-    if idx >= 4 and M_CLASS_21_SPECS[seq[idx - 4]].cyclic_hinge == 0:
+    # i -> i-4 alpha-helical H-bond closure coupling (+2 quanta when non-cyclic)
+    if idx >= 4:
         ops += 1
-        if spec.k4_groove == 0:
-            votes_0 += 2
+        pot[0] += 2 * (1 - M_CLASS_21_SPECS[seq[idx - 4]].cyclic_hinge) * (1 if spec.k4_groove == 0 else 0)
 
-    if votes_2 > votes_0 and votes_2 > votes_1 and spec.k4_groove == 2:
-        return 2, ops
-    if votes_1 > votes_0:
-        return 1, ops
-    return 0, ops
+    # Steric ring closure on cyclic/glycine hinge forces the K_4 turn channel (g = 2)
+    pot[2] += c.n_12 * spec.cyclic_hinge
+    # Intrinsic groove preference breaks ties toward the residue's own K_4 channel
+    pot[2] *= (1 if spec.k4_groove == 2 else 0)
+
+    best_g = 0
+    if pot[1] > pot[best_g]:
+        best_g = 1
+    if pot[2] > pot[best_g]:
+        best_g = 2
+    return best_g, ops
 
 
 def m_fold_chain_cotranslational(
@@ -335,15 +334,34 @@ class MIgLock:
     contact_classes_7: tuple[int, ...]  # Classes at {W+3, W+4, W+6, W+12, W+13, Cys_F-12, Cys_F-5}
 
 
+def _m_major_groove_fork_affinity(cls_id: int, base_z4: int) -> int:
+    """Compute the branchless bilinear pairing affinity <fork(a), slots(b)> on the K_4 Major Groove."""
+    fork = M_CLASS_21_SPECS[cls_id].hb_fork
+    s0, s1, s2, _ = M_MAJOR_GROOVE_SLOTS[base_z4 & 3]
+    if len(fork) == 0:
+        return -10
+    f0 = fork[0]
+    f1 = fork[1] if len(fork) >= 2 else f0
+    # 1. Electrostatic donor/acceptor complementarity across the 3 groove H-bond slots (s0, s1, s2)
+    #    where s * f == -1 gives +1 E_HB and s * f == +1 gives -1 repulsion
+    q_s0 = -f0 * (s0 if abs(s0) == 1 else 0)
+    q_s1 = -f1 * (s1 if abs(s1) == 1 else 0)
+    q_s2 = (f0 - f1) * (s2 if abs(s2) == 1 else 0)
+    # 2. Steric methyl-pocket coupling on slot 0 (s0 == +2 favors nonpolar f0 == 0, penalizes charged forks)
+    is_methyl = 1 if s0 == +2 else 0
+    is_nonpolar = 1 if (f0 == 0 and f1 == 0) else 0
+    q_methyl = is_methyl * (4 * is_nonpolar - 2 * abs(f0)) + (1 - is_methyl) * (-2 * is_nonpolar)
+    return 2 * (q_s0 + q_s1) + q_s2 + q_methyl
+
+
+# Canonical Z_21 reader classes representing the 4 oriented K_4 Major Groove fork types:
+#   3 (Ala: [0]), 19 (Glu: [-1, -1]), 15 (Gln: [+1, -1]), 2 (Arg: [+1, +1])
+M_CANONICAL_READER_CLASSES: tuple[int, int, int, int] = (3, 19, 15, 2)
+
+
 def _m_reader_class_to_base_z4(cls_id: int) -> int:
-    """Map a Z_21 reader class to its complementary Z_4 base via H-bond fork."""
-    if cls_id in (2, 17, 14):
-        return 3  # [+1, +1] pairs with b=3 (-1, -1, +1, 0)
-    if cls_id in (15, 16):
-        return 2  # [+1, -1] pairs with b=2 (-1, +1, -1, +2)
-    if cls_id in (18, 19):
-        return 1  # [-1, -1] pairs with b=1 (0, +1, -1, -1)
-    return 0  # Hydrophobic pairs with methyl +2 of b=0
+    """Map a Z_21 reader class to its complementary Z_4 base via argmax of Major Groove fork affinity."""
+    return max((0, 1, 2, 3), key=lambda b: _m_major_groove_fork_affinity(cls_id, b))
 
 
 def m_scan_c2h2_locks(
@@ -621,15 +639,9 @@ def m_scan_transmembrane_rods(
 
 
 def _m_base_z4_to_reader_class(b_z4: int) -> int:
-    """Exact inverse of `_m_reader_class_to_base_z4`: map target Z_4 base to its Major Groove reader class."""
+    """Exact inverse of `_m_reader_class_to_base_z4` via argmax of Major Groove fork affinity."""
     b = int(b_z4) & 3
-    if b == 3:
-        return 2  # Arg (+1, +1) reads G (3)
-    if b == 2:
-        return 15  # Gln (+1, -1) reads A (2)
-    if b == 1:
-        return 19  # Glu (-1, -1) reads C (1)
-    return 3  # Ala (0, 0) methyl-locks T/U (0)
+    return max(M_CANONICAL_READER_CLASSES, key=lambda cls_id: _m_major_groove_fork_affinity(cls_id, b))
 
 
 @dataclass(frozen=True)

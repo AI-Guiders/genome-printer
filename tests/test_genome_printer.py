@@ -12,6 +12,8 @@ from genome_printer import (
     K4_TETRAHEDRAL_SLOTS,
     fcc_shell_count,
     fcc_ball_count,
+    m_step_g_reversible,
+    m_step_g_reverse,
     m_cuboctahedral_subshells,
     m_ionization_ratio_be_h,
     m_ionization_energy_e0,
@@ -84,6 +86,22 @@ def test_m_carrier_native_ladder_dh_dt_s0() -> None:
     id3 = (1 << M_CARRIER.frac_bits) - 1
     assert id1 == id2 == id3 == 63
     assert fcc_ball_count(3) == 147
+
+    # Bit-exact reversibility of the shared mt_ca step operator `g` on 3D FCC Z_512[i]^2
+    f0 = np.zeros((4, 4, 4, 4), dtype=np.int32)
+    f0[2, 2, 2] = [64, 0, 0, 64]
+    f0[2, 3, 2] = [32, 32, 16, 48]
+    f_curr = f0.copy()
+    f_past = f0.copy()
+    impulses = []
+    for _ in range(6):
+        f_next, f_prev, imp = m_step_g_reversible(f_curr, f_past)
+        impulses.append(imp)
+        f_past = f_prev
+        f_curr = f_next
+    for imp in reversed(impulses):
+        f_past, f_curr = m_step_g_reverse(f_past, f_curr, imp)
+    assert np.array_equal(f_curr, f0)
 
 
 def test_m_chemistry_and_t_projector() -> None:
@@ -252,12 +270,32 @@ def test_m_tissue_organogenesis_and_fcc_automaton() -> None:
     assert col.topology_snapshot.ig_synapses_count == 75
     assert col.topology_snapshot.carrier_stage_code == 4
 
-    # 4. Autonomous morphogenesis driven purely by expressed protein locks:
-    #    prod1 carries Trp-pin -> carrier infers D_3d axial symmetry without Ig rescue -> grows Tube (code=3)
+    # 4. Autonomous morphogenesis driven purely by expressed protein locks via the single branchless field:
+    #    - lock-free proteome -> isotropic O_h -> grows hollow Vesicle S^2 (code=2, chi_2D=2)
+    #    - prod1 carries Trp-pin -> D_3d axial symmetry without Ig rescue -> grows hollow Tube (code=3, chi_2D=0)
+    #    - donor + acceptor Ig proteome -> D_3d with Ig synaptic rescue -> grows 6-layer Column (code=4, chi_2D=41)
+    lock_free_cds = encode_dna_to_z4("ATGGCGCTGGCGGCGCTGGCGCTGGCGTAA")
+    prod_iso = m_express_locus(MGeneLocus(2, prom1_z4, lock_free_cds))
+    auto_vesicle = m_grow_tissue_autonomous([prod_iso])
+    assert auto_vesicle.topology_snapshot is not None
+    assert auto_vesicle.topology_snapshot.carrier_stage_code == 2
+    assert auto_vesicle.topology_snapshot.euler_chi_2d == 2
+
     auto_tube = m_grow_tissue_autonomous([prod1], axial_steps=4)
     assert auto_tube.topology_snapshot is not None
     assert auto_tube.topology_snapshot.carrier_stage_code == 3
     assert auto_tube.topology_snapshot.euler_chi_2d == 0
+    assert len(auto_tube.cavitation_events) == 4
+
+    ig_donor_res, _ = synthesize_gene_and_protein_xray(ig_synaptic_polarity=+1, min_stability_quanta_ehb=40)
+    ig_acc_res, _ = synthesize_gene_and_protein_xray(ig_synaptic_polarity=-1, min_stability_quanta_ehb=40)
+    auto_col = m_grow_tissue_autonomous([ig_donor_res.verified_expression, ig_acc_res.verified_expression])
+    assert auto_col.topology_snapshot is not None
+    assert auto_col.topology_snapshot.carrier_stage_code == 4
+    assert auto_col.topology_snapshot.euler_chi_2d == 41
+    assert len(auto_col.living_cells) == 42
+    assert len(auto_col.adhesion_network) == 147
+    assert len(auto_col.cavitation_events) == 0
 
     t_str = format_tissue_xray_table(col)
     assert "TISSUE MORPHOLOGY X-RAY TRACE" in t_str

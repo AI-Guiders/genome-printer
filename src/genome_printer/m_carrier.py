@@ -20,26 +20,18 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 import numpy as np
+import torch
+
+from mt_ca.config import MConfig
+from mt_ca.laplacian import _FCC_OFFSETS
+from mt_ca.projected_collision import int_neighbor_sum, projected_phi_int
+from mt_ca.reversible import leapfrog_forward_fixed, leapfrog_reverse_fixed
+from mt_ca.si_constants import PLANCK_CELL, heisenberg_phi_min_disc
+from mt_ca.z_ring import mod_lane, signed_from_mod
 
 
-# 12 integer lattice displacement vectors of the 3D FCC cuboctahedral star N_12
-FCC_N12_VECTORS: np.ndarray = np.array(
-    [
-        [1, 1, 0],
-        [1, -1, 0],
-        [-1, 1, 0],
-        [-1, -1, 0],
-        [1, 0, 1],
-        [1, 0, -1],
-        [-1, 0, 1],
-        [-1, 0, -1],
-        [0, 1, 1],
-        [0, 1, -1],
-        [0, -1, 1],
-        [0, -1, -1],
-    ],
-    dtype=np.int64,
-)
+# 12 integer lattice displacement vectors of the 3D FCC cuboctahedral star N_12 (SSOT: mt_ca.laplacian._FCC_OFFSETS)
+FCC_N12_VECTORS: np.ndarray = np.array(_FCC_OFFSETS, dtype=np.int64)
 
 # 6 integer vectors in the {111} hexagonal slice N_6 (dx + dy + dz == 0)
 HEX_N6_VECTORS: np.ndarray = np.array(
@@ -117,20 +109,20 @@ class MCarrierConstants:
     kappa_sq: float = 0.5
     kappa_hex: float = math.sqrt(3.0) / 2.0
 
-    # Bekenstein bit budget and Z_512 phase ring
-    b_v: float = (2.0 * math.pi) / math.log(2.0)
-    mod_bits: int = int(math.floor((2.0 * math.pi) / math.log(2.0)))  # 9
-    n_ring: int = 1 << int(math.floor((2.0 * math.pi) / math.log(2.0)))  # 512
-    n_hier: int = int(math.floor((2.0 * math.pi) / math.log(2.0))) - 1  # 8
-    frac_bits: int = int(math.floor((2.0 * math.pi) / math.log(2.0))) - 3  # 6
-    n_codons: int = 1 << 6  # 64 = 2^frac_bits
-    z_min: float = 1.0 / (1 << 6)  # 1/64
-    n_hb: int = (1 << 6) - 1  # 63 = d * kappa^2 * N_shell(2)
+    # Bekenstein bit budget and Z_512 phase ring (SSOT: mt_ca.si_constants.PLANCK_CELL)
+    b_v: float = PLANCK_CELL.B_V
+    mod_bits: int = PLANCK_CELL.mod_bits  # 9
+    n_ring: int = PLANCK_CELL.N_ring  # 512
+    n_hier: int = PLANCK_CELL.mod_bits - 1  # 8
+    frac_bits: int = PLANCK_CELL.frac_bits  # 6
+    n_codons: int = 1 << PLANCK_CELL.frac_bits  # 64 = 2^frac_bits
+    z_min: float = 1.0 / (1 << PLANCK_CELL.frac_bits)  # 1/64
+    n_hb: int = (1 << PLANCK_CELL.frac_bits) - 1  # 63 = d * kappa^2 * N_shell(2)
     delta_phi_min: float = 0.5
     phase_residue_r: float = 0.5 / (2.0 * math.pi)  # 1 / (4*pi)
-    delta_phi_disc: int = round(512 * 0.5 / (2.0 * math.pi))  # 41
-    phi_pauli: int = 512 // 2  # 256
-    n_phi: int = math.ceil(512 / 41)  # 13 = 1 + |N_12|
+    delta_phi_disc: int = heisenberg_phi_min_disc(phase_bits=PLANCK_CELL.phase_bits)  # 41
+    phi_pauli: int = PLANCK_CELL.N_ring // 2  # 256
+    n_phi: int = PLANCK_CELL.N_phi  # 13 = 1 + |N_12|
     m_hat: int = 1 + 12 * 8  # 97 = 4^2 + 9^2
     delta_pack: float = 0.5 / 12.0  # 1/24
 
@@ -324,3 +316,57 @@ class MCarrierConstants:
 
 
 M_CARRIER = MCarrierConstants()
+
+# --- Universal Scale-Invariant Reversible Step Operator `g` on Z_512[i]^2 (SSOT: mt_ca.projected_collision) ---
+
+M_FCC_CONFIG: MConfig = MConfig()
+
+
+def m_signed_from_mod(u: np.ndarray, mod_bits: int = M_CARRIER.mod_bits) -> np.ndarray:
+    """Delegate directly to mt_ca.z_ring.signed_from_mod."""
+    t_u = torch.as_tensor(u, dtype=torch.int32)
+    return signed_from_mod(t_u, mod_bits=mod_bits).cpu().numpy()
+
+
+def m_mod_lane(x: np.ndarray, mod_bits: int = M_CARRIER.mod_bits) -> np.ndarray:
+    """Delegate directly to mt_ca.z_ring.mod_lane."""
+    t_x = torch.as_tensor(x, dtype=torch.int64)
+    return mod_lane(t_x, mod_bits=mod_bits).cpu().numpy()
+
+
+def m_fcc_neighbor_sum_int(f_curr: np.ndarray, cfg: MConfig = M_FCC_CONFIG) -> np.ndarray:
+    """Delegate directly to mt_ca.projected_collision.int_neighbor_sum."""
+    t_f = torch.as_tensor(f_curr, dtype=torch.int64)
+    return int_neighbor_sum(t_f, cfg.stencil).cpu().numpy()
+
+
+def m_projected_phi_int(f_curr: np.ndarray, cfg: MConfig = M_FCC_CONFIG) -> np.ndarray:
+    """Delegate directly to mt_ca.projected_collision.projected_phi_int on Z_512[i]^2."""
+    t_f = torch.as_tensor(f_curr, dtype=torch.int32)
+    return projected_phi_int(t_f, cfg).cpu().numpy()
+
+
+def m_step_g_reversible(
+    f_curr: np.ndarray,
+    f_past: np.ndarray,
+    cfg: MConfig = M_FCC_CONFIG,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Execute one canonical reversible step `g` by calling `mt_ca.reversible.leapfrog_forward_fixed` directly."""
+    t_curr = torch.as_tensor(f_curr, dtype=torch.int32)
+    t_past = torch.as_tensor(f_past, dtype=torch.int32)
+    t_next, t_prev, t_imp = leapfrog_forward_fixed(t_curr, t_past, cfg)
+    return t_next.cpu().numpy(), t_prev.cpu().numpy(), t_imp.cpu().numpy()
+
+
+def m_step_g_reverse(
+    f_curr: np.ndarray,
+    f_next: np.ndarray,
+    n_impulse: np.ndarray,
+    cfg: MConfig = M_FCC_CONFIG,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Execute exact bit-reversible inverse step `g^(-1)` by calling `mt_ca.reversible.leapfrog_reverse_fixed` directly."""
+    t_curr = torch.as_tensor(f_curr, dtype=torch.int32)
+    t_next = torch.as_tensor(f_next, dtype=torch.int32)
+    t_imp = torch.as_tensor(n_impulse, dtype=torch.int32)
+    t_past, t_c = leapfrog_reverse_fixed(t_curr, t_next, t_imp, cfg)
+    return t_past.cpu().numpy(), t_c.cpu().numpy()

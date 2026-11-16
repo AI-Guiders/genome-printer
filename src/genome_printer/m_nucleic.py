@@ -196,14 +196,12 @@ def m_build_duplex(
 class MIntronSplicingSpan:
     """M-layer spliced intron lariat span on a 2-bit Z_4 transcript.
 
-    Physical splicing gate on Z_4:
+    Physical splicing gate on Z_4 (zero reading-frame lookahead):
       - 5' donor stem: `s_donor = (3 << 2) | 0 = 12` (`(3, 0)` in Z_4, i.e., `GU`),
       - 3' acceptor stem: `s_acceptor = (2 << 2) | 3 = 11` (`(2, 3)` in Z_4, i.e., `AG`),
-      - Branch-point adenosine `b = 2` preceded by a 2-bond pyrimidine tract (`b in {0, 1}`)
-        located within the cuboctahedral shell window `[j - N_shell(2), j - N_shell(1)] = [j - 42, j - 12]`
-        upstream of the 3' acceptor `j`,
-      - Frame-rescue condition: excising `[i .. j + 1]` removes an in-frame termination
-        triplet (`class 20`) that would otherwise truncate the open reading frame!
+      - Branch-point adenosine `b = 2` followed by a continuous 2-bond/pyrimidine tract (`(b >> 1) == 0`)
+        of length `>= |N_12| = 12` located within the cuboctahedral shell window
+        `[j - N_shell(2), j - N_shell(1)] = [j - 42, j - 12]` upstream of the 3' acceptor `j`.
     """
 
     donor_start_idx: int
@@ -216,41 +214,31 @@ def m_splice_pre_mrna(
     bases_z4: tuple[int, ...] | list[int],
     c: MCarrierConstants = M_CARRIER,
 ) -> tuple[tuple[int, ...], tuple[MIntronSplicingSpan, ...]]:
-    """Deterministic M-layer lariat splicing of a 2-bit Z_4 transcript."""
+    """Deterministic M-layer lariat splicing of a 2-bit Z_4 transcript via pure shell geometry."""
     seq = tuple(int(b) & 3 for b in bases_z4)
     n = len(seq)
     spliced: list[int] = []
-    spans: list[MIntronSplicingSpan] = []
+    spans: list[MIntronSplicingSpan, ...] = []
 
     i = 0
     while i < n:
-        # Check for 5' donor dinucleotide (3, 0) [stem 12]
-        if i + 1 < n and seq[i] == 3 and seq[i + 1] == 0:
+        # 5' donor dinucleotide stem s_donor = (b_i << 2) | b_{i+1} == 12 ((3, 0))
+        if i + 1 < n and ((seq[i] << 2) | seq[i + 1]) == c.n_12:
             found_intron: MIntronSplicingSpan | None = None
-            # Search for 3' acceptor (2, 3) [stem 11] within [i + N_shell(2) - 1 .. i + N_ring]
             min_end = i + c.n_shell_2 - 1
             max_end = min(n - 1, i + c.n_ring)
             for j in range(min_end, max_end):
-                if seq[j - 1] == 2 and seq[j] == 3:
-                    # Check if the candidate intron [i .. j] contains at least one IN-FRAME stop codon (class 20)
-                    has_stop = False
-                    for k in range(i, j - 2):
-                        if (k % 3) != 0:
-                            continue
-                        c6 = (seq[k] << 4) | (seq[k + 1] << 2) | seq[k + 2]
-                        if M_CODON_TO_CLASS_21[c6] == 20:
-                            has_stop = True
-                            break
-                    if not has_stop:
-                        continue
-                    # Locate branch-point base `2` within [j - 42 .. j - 12] followed by a pure pyrimidine tract (0 or 1)
+                # 3' acceptor dinucleotide stem s_acc = (b_{j-1} << 2) | b_j == 11 ((2, 3))
+                if ((seq[j - 1] << 2) | seq[j]) == (c.n_12 - 1):
+                    # Locate branch-point base `2` within [j - N_shell(2) .. j - N_shell(1)]
+                    # followed by a continuous pyrimidine tract (b >> 1 == 0) of length >= |N_12| = 12
                     bp_idx = -1
-                    w_lo = max(i + 6, j - c.n_shell_2)
+                    w_lo = max(i + c.n_squares, j - c.n_shell_2)
                     w_hi = max(w_lo, j - c.n_shell_1)
                     for b_pos in range(w_lo, w_hi + 1):
                         if seq[b_pos] == 2:
                             tract = seq[b_pos + 1 : j - 1]
-                            if len(tract) >= c.n_12 and all(b_tr in (0, 1) for b_tr in tract):
+                            if len(tract) >= c.n_12 and all((b_tr >> 1) == 0 for b_tr in tract):
                                 bp_idx = b_pos
                                 break
                     if bp_idx != -1:
