@@ -65,6 +65,18 @@ from .xray import (
     trace_ig_synaptic_contacts,
     format_xray_report,
 )
+from .organogenesis import (
+    CellNode,
+    CellDivisionEvent,
+    CellAdhesionContact,
+    ApoptosisEvent,
+    OrganogenesisXRayResult,
+    compute_octant_code,
+    grow_epithelial_vesicle,
+    grow_neural_or_vascular_tube,
+    grow_cortical_column_6layers,
+    format_organ_xray_report,
+)
 
 __all__ = [
     "FCC_N12_VECTORS",
@@ -116,5 +128,15 @@ __all__ = [
     "trace_tf_dna_contacts",
     "trace_ig_synaptic_contacts",
     "format_xray_report",
+    "CellNode",
+    "CellDivisionEvent",
+    "CellAdhesionContact",
+    "ApoptosisEvent",
+    "OrganogenesisXRayResult",
+    "compute_octant_code",
+    "grow_epithelial_vesicle",
+    "grow_neural_or_vascular_tube",
+    "grow_cortical_column_6layers",
+    "format_organ_xray_report",
 ]
 

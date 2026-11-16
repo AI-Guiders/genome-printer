@@ -41,6 +41,10 @@ from genome_printer import (
     trace_tf_dna_contacts,
     trace_ig_synaptic_contacts,
     format_xray_report,
+    grow_epithelial_vesicle,
+    grow_neural_or_vascular_tube,
+    grow_cortical_column_6layers,
+    format_organ_xray_report,
 )
 
 
@@ -225,3 +229,29 @@ def test_xray_bond_tracer() -> None:
     ig_contacts = trace_ig_synaptic_contacts(d_lock, a_lock)
     assert len(ig_contacts) == 7
     assert sum(ev.net_quanta_ehb for ev in ig_contacts) > 0
+
+
+def test_3d_organogenesis_and_cortical_connectome() -> None:
+    """Verify 3D organogenesis on FCC N12: alveolar vesicle, neural/vascular tube, and 6-layer cortex."""
+    # 1. Hollow cuboctahedral epithelial vesicle (N_shell(1) = 12 living cells, 1 central lumen cavity)
+    vesicle = grow_epithelial_vesicle()
+    assert len(vesicle.living_cells) == 12
+    assert len(vesicle.lumen_cavity_nodes) == 1
+    assert vesicle.lumen_cavity_nodes[0] == (0, 0, 0)
+    # On the cuboctahedron S_1, each of the 12 vertices has 4 lateral S_1 neighbors -> 12*4/2 = 24 edges!
+    assert len(vesicle.adhesion_network) == 24
+    assert vesicle.total_adhesion_quanta_ehb == 24 * 3  # 72 E_HB
+
+    # 2. Polarized neural / vascular tube (4 stacked N_6 hexagonal rings = 24 cells, 4 lumen nodes)
+    tube = grow_neural_or_vascular_tube(axial_rings=4)
+    assert len(tube.living_cells) == 24
+    assert len(tube.lumen_cavity_nodes) == 4
+    assert len(tube.adhesion_network) > 24
+
+    # 3. 6-layer neocortical column (|square| = 6 layers x 7 cells = 42 = N_shell(2) neurons!)
+    cortex = grow_cortical_column_6layers()
+    assert len(cortex.living_cells) == 6 * 7 == 42
+    assert len(cortex.synaptic_connectome) > 0
+    rep_str = format_organ_xray_report(cortex)
+    assert "Layer_VI_Corticothalamic" in rep_str
+    assert "Ig_donor <-> Ig_acceptor" in rep_str
