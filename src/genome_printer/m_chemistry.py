@@ -597,6 +597,11 @@ class MAllometryAtpAndKineticsInvariants:
     trouton_vaporization_jump_iso_and_assoc: tuple[float, float]  # (d^3 / 2 - d, d^3 / 2) = (21/2, 27/2) = (10.5, 13.5)
     guldberg_boil_over_crit_ratio: float  # (4/27) / (8/31) = 31 / 54 ~ 0.574074
     critical_compressibility_ladder: tuple[float, float, float]  # (d / N_hier, d_out(V) / (2 * |N_12|), d / N_phi) = (3/8, 7/24, 3/13)
+    pitzer_acentric_quantum: float  # s_0 / N_phi = 1 / (2 * N_phi) = 1 / 26 ~ 0.0384615
+    pitzer_water_acentric_factor: float  # mod_bits / (2 * N_phi) = 9 / 26 ~ 0.346154 (NIST H2O: 0.344)
+    water_zc_to_omega_ratio: float  # (3/13) / (9/26) = 2 / 3 = (d - 1) / d (NIST: 0.229 / 0.344 = 0.6657)
+    lee_kesler_zc_slope: float  # 1 / |N_12| = 1 / 12 ~ 0.083333 (Z_c(omega) = 7/24 - omega/12 vs Lee-Kesler 0.2905 - 0.085*omega)
+    critical_exponents_3d_alpha_nu_eta_beta_gamma_delta: tuple[float, float, float, float, float, float]  # (1/9, 17/27, 2/55, 323/990, 68/55, 91/19)
     neutral_ph_invariant: int  # d_out(V) = 7
     water_pkw_invariant: int  # 2 * d_out(V) = 14
 
@@ -604,7 +609,7 @@ class MAllometryAtpAndKineticsInvariants:
 def m_compute_allometry_atp_and_kinetics_invariants(
     c: MCarrierConstants = M_CARRIER,
 ) -> MAllometryAtpAndKineticsInvariants:
-    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, photosynthesis windows, O(1) catalytic barrier step-down, and phase-transition invariants."""
+    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, photosynthesis windows, O(1) catalytic barrier step-down, and phase-transition / 3D critical exponents."""
     d_pol = c.d - c.d_in_v  # 2
     t_over_t_soft = float(c.n_12 - d_pol) / float(c.d ** c.d_in_sq)  # 10 / 81
     soft_multipliers = (
@@ -641,6 +646,18 @@ def m_compute_allometry_atp_and_kinetics_invariants(
         float(c.d_out_v) / float(d_pol * c.n_12),
         float(c.d) / float(c.n_phi),
     )  # (3/8, 7/24, 3/13)
+    omega_q = c.s_0 / float(c.n_phi)  # 1 / 26
+    omega_h2o = float(c.mod_bits) * omega_q  # 9 / 26
+    zc_to_omega_h2o = z_crit_ladder[2] / omega_h2o  # (3/13) / (9/26) = 2 / 3
+    lk_slope = float(c.d_in_v) / float(c.n_12)  # 1 / 12
+    n_ball_2 = c.d_in_v + c.n_shell_1 + c.n_shell_2  # 1 + 12 + 42 = 55
+    crit_alpha = float(c.d_in_v) / float(c.mod_bits)  # 1 / 9 ~ 0.11111
+    crit_nu = (float(d_pol) - crit_alpha) / float(c.d)  # 17 / 27 ~ 0.62963
+    crit_eta = float(d_pol) / float(n_ball_2)  # 2 / 55 ~ 0.036364
+    crit_beta = c.s_0 * crit_nu * (float(c.d - d_pol) + crit_eta)  # 323 / 990 ~ 0.32626
+    crit_gamma = crit_nu * (float(d_pol) - crit_eta)  # (17/27)*(108/55) = 68 / 55 ~ 1.23636
+    crit_delta = (float(c.d + d_pol) - crit_eta) / (float(c.d - d_pol) + crit_eta)  # 91 / 19 ~ 4.78947
+    crit_exponents_3d = (crit_alpha, crit_nu, crit_eta, crit_beta, crit_gamma, crit_delta)
 
     return MAllometryAtpAndKineticsInvariants(
         kleiber_metabolic_exponent=float(c.d) / float(c.d_in_sq),
@@ -670,6 +687,11 @@ def m_compute_allometry_atp_and_kinetics_invariants(
         trouton_vaporization_jump_iso_and_assoc=trouton_pair,
         guldberg_boil_over_crit_ratio=guldberg_ratio,
         critical_compressibility_ladder=z_crit_ladder,
+        pitzer_acentric_quantum=omega_q,
+        pitzer_water_acentric_factor=omega_h2o,
+        water_zc_to_omega_ratio=zc_to_omega_h2o,
+        lee_kesler_zc_slope=lk_slope,
+        critical_exponents_3d_alpha_nu_eta_beta_gamma_delta=crit_exponents_3d,
         neutral_ph_invariant=c.d_out_v,
         water_pkw_invariant=d_pol * c.d_out_v,
     )

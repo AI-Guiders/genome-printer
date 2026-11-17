@@ -462,6 +462,47 @@ def test_m_chemistry_and_t_projector() -> None:
         float(M_CARRIER.d) / float(M_CARRIER.n_phi),
         abs_tol=1e-12,
     )
+    assert math.isclose(
+        ak.pitzer_acentric_quantum,
+        M_CARRIER.s_0 / float(M_CARRIER.n_phi),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.pitzer_water_acentric_factor,
+        float(M_CARRIER.mod_bits) / float(d_pol * M_CARRIER.n_phi),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.water_zc_to_omega_ratio,
+        float(d_pol) / float(M_CARRIER.d),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.lee_kesler_zc_slope,
+        float(M_CARRIER.d_in_v) / float(M_CARRIER.n_12),
+        abs_tol=1e-12,
+    )
+    n_ball_2 = M_CARRIER.d_in_v + M_CARRIER.n_shell_1 + M_CARRIER.n_shell_2
+    assert math.isclose(
+        ak.critical_exponents_3d_alpha_nu_eta_beta_gamma_delta[0],
+        float(M_CARRIER.d_in_v) / float(M_CARRIER.mod_bits),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.critical_exponents_3d_alpha_nu_eta_beta_gamma_delta[1],
+        (float(M_CARRIER.n_hier) + M_CARRIER.s_0) / (float(M_CARRIER.n_phi) + M_CARRIER.s_0),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.critical_exponents_3d_alpha_nu_eta_beta_gamma_delta[2],
+        float(d_pol) / float(n_ball_2),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.critical_exponents_3d_alpha_nu_eta_beta_gamma_delta[4],
+        float(M_CARRIER.d_in_sq * (d_pol * M_CARRIER.n_hier + M_CARRIER.d_in_v)) / float(n_ball_2),
+        abs_tol=1e-12,
+    )
     assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
     assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
 
