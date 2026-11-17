@@ -566,3 +566,62 @@ def m_compute_cuboctahedral_aperture_and_gas_invariants(
     )
 
 
+@dataclass(frozen=True)
+class MAllometryAtpAndKineticsInvariants:
+    """Dimensionless M-layer invariants of allometric scaling, F0F1-ATP bioenergetics, and water kinetics."""
+
+    kleiber_metabolic_exponent: float  # d / d_in(sq) = d / (d + 1) = 3 / 4 = 0.75
+    physiological_freq_exponent: float  # -d_in(V) / d_in(sq) = -1 / 4 = -0.25
+    lifespan_scaling_exponent: float  # +d_in(V) / d_in(sq) = +1 / 4 = +0.25
+    heart_to_breath_ratio_min: int  # d_in(sq) = 4
+    heart_to_breath_ratio_max: int  # N_hier = 8
+    lifetime_respiratory_cycles: int  # N_ring^d = 512^3 = 2^27 = 134,217,728
+    lifetime_heartbeats: int  # N_hier * N_ring^d = 8 * 512^3 = 2^30 = 1,073,741,824
+    homeothermy_t_body_over_t_hb: float  # (|N_12| - 2) / d^4 = 10 / 81 (~309.40 K = 36.25 C)
+    f0_rotor_c_ring_subunits: int  # N_hier = 8 (animal mitochondrial c_8 ring)
+    f1_catalytic_beta_sites: int  # d = 3 (alpha_3 beta_3 rotary head, 120 deg step)
+    protons_per_atp_ratio: float  # N_hier / d = 8 / 3 ~ 2.6667
+    atp_standard_dg0_in_ehb: float  # d * s_0 = 3 / 2 = 1.5 E_HB (~31.26 kJ/mol)
+    atp_physiological_dg_in_ehb: float  # N_hier / d = 8 / 3 ~ 2.6667 E_HB (~55.57 kJ/mol)
+    pmf_per_proton_in_ehb: float  # 1.0 E_HB (~216 mV membrane proton-motive force)
+    grotthuss_hop_barrier_in_ehb: float  # s_0 = 1 / 2 = 0.5 E_HB (~10.42 kJ/mol = 0.108 eV)
+    water_autoionization_dh_in_ehb: float  # N_hier / d = 8 / 3 ~ 2.6667 E_HB (~55.57 kJ/mol)
+    water_autoionization_dg_in_ehb: float  # d_in(sq) = 4.0 E_HB (~83.35 kJ/mol)
+    neutral_ph_invariant: int  # d_out(V) = 7
+    water_pkw_invariant: int  # 2 * d_out(V) = 14
+
+
+def m_compute_allometry_atp_and_kinetics_invariants(
+    c: MCarrierConstants = M_CARRIER,
+) -> MAllometryAtpAndKineticsInvariants:
+    """Derive Kleiber 3/4 allometry, F0F1-ATP synthase 8/3 bioenergetics, and Grotthuss / pKw water kinetics."""
+    d_pol = c.d - c.d_in_v  # 2
+    n_breaths = c.n_ring ** c.d  # 512^3 = 134,217,728
+    n_beats = c.n_hier * n_breaths  # 8 * 512^3 = 1,073,741,824
+    t_body_ratio = float(c.n_12 - d_pol) / float(c.d ** c.d_in_sq)  # 10 / 81
+    h_per_atp = float(c.n_hier) / float(c.d)  # 8 / 3
+
+    return MAllometryAtpAndKineticsInvariants(
+        kleiber_metabolic_exponent=float(c.d) / float(c.d_in_sq),
+        physiological_freq_exponent=-float(c.d_in_v) / float(c.d_in_sq),
+        lifespan_scaling_exponent=float(c.d_in_v) / float(c.d_in_sq),
+        heart_to_breath_ratio_min=c.d_in_sq,
+        heart_to_breath_ratio_max=c.n_hier,
+        lifetime_respiratory_cycles=n_breaths,
+        lifetime_heartbeats=n_beats,
+        homeothermy_t_body_over_t_hb=t_body_ratio,
+        f0_rotor_c_ring_subunits=c.n_hier,
+        f1_catalytic_beta_sites=c.d,
+        protons_per_atp_ratio=h_per_atp,
+        atp_standard_dg0_in_ehb=float(c.d) * c.s_0,
+        atp_physiological_dg_in_ehb=h_per_atp,
+        pmf_per_proton_in_ehb=float(c.d_in_v),
+        grotthuss_hop_barrier_in_ehb=c.s_0,
+        water_autoionization_dh_in_ehb=h_per_atp,
+        water_autoionization_dg_in_ehb=float(c.d_in_sq),
+        neutral_ph_invariant=c.d_out_v,
+        water_pkw_invariant=d_pol * c.d_out_v,
+    )
+
+
+

@@ -29,6 +29,7 @@ from genome_printer import (
     m_compute_periodic_and_nuclear_shells,
     m_solve_fcc_graph_dirac_spectrum,
     m_compute_cuboctahedral_aperture_and_gas_invariants,
+    m_compute_allometry_atp_and_kinetics_invariants,
     M_FRONTAL_TRACKS,
     M_MAJOR_GROOVE_SLOTS,
     M_RUMER_OCTET_I_STEMS,
@@ -348,6 +349,45 @@ def test_m_chemistry_and_t_projector() -> None:
         float(M_CARRIER.delta_phi_disc) / float(M_CARRIER.n_ring),
         abs_tol=1e-12,
     )
+
+    # Kleiber 3/4 allometry, F0F1-ATP synthase 8/3 bioenergetics, and Grotthuss / pKw water kinetics
+    ak = m_compute_allometry_atp_and_kinetics_invariants()
+    assert math.isclose(
+        ak.kleiber_metabolic_exponent,
+        float(M_CARRIER.d) / float(M_CARRIER.d_in_sq),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.physiological_freq_exponent + ak.lifespan_scaling_exponent,
+        0.0,
+        abs_tol=1e-12,
+    )
+    assert ak.lifetime_respiratory_cycles == (M_CARRIER.n_ring ** M_CARRIER.d)
+    assert ak.lifetime_heartbeats == M_CARRIER.n_hier * ak.lifetime_respiratory_cycles
+    assert math.isclose(
+        ak.homeothermy_t_body_over_t_hb,
+        float(M_CARRIER.n_12 - d_pol) / float(M_CARRIER.d ** M_CARRIER.d_in_sq),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.protons_per_atp_ratio,
+        float(M_CARRIER.n_hier) / float(M_CARRIER.d),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.atp_standard_dg0_in_ehb,
+        float(M_CARRIER.d) * M_CARRIER.s_0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.atp_physiological_dg_in_ehb,
+        ak.water_autoionization_dh_in_ehb,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(ak.grotthuss_hop_barrier_in_ehb, M_CARRIER.s_0, abs_tol=1e-12)
+    assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
+    assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
+
 
 
 
