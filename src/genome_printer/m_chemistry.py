@@ -586,6 +586,9 @@ class MAllometryAtpAndKineticsInvariants:
     membrane_v_spike_in_vsoft: float  # s_0 = 1 / 2 V_soft^(m) (~30.9, 108.0, 216.0 mV)
     photosynthesis_red_edge_quanta_esoft: int  # N_hier = 8 E_soft^(m) (~2512 nm Titan IR window, 717.6 nm Earth P700, 358.8 nm Venus UV absorber)
     photosynthesis_blue_edge_quanta_esoft: int  # N_phi = 13 E_soft^(m) (~1546 nm Titan IR window, 441.6 nm Earth Soret, 220.8 nm Venus UV edge)
+    elementary_reaction_mechanisms_count: int  # d_in(sq) = 4 channels (V: K_2 radical/redox, E: K_3 SN2/proton, triangle: K_4 tetrahedral, square: pericyclic)
+    burgi_dunitz_attack_angle_rad: float  # arccos(-1/d) = arccos(-1/3) ~ 1.910633 rad (109.47 deg tetrahedral K_4 attack on trigonal K_3)
+    catalytic_barrier_ladder_in_esoft: tuple[float, float, float, float]  # (8.0, 5.0, 3.0, 0.5) E_soft^(m) via 8 = 3 (triad) + 2 (hole/Walker) + 3 (metal/ATP)
     neutral_ph_invariant: int  # d_out(V) = 7
     water_pkw_invariant: int  # 2 * d_out(V) = 14
 
@@ -593,7 +596,7 @@ class MAllometryAtpAndKineticsInvariants:
 def m_compute_allometry_atp_and_kinetics_invariants(
     c: MCarrierConstants = M_CARRIER,
 ) -> MAllometryAtpAndKineticsInvariants:
-    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, and photosynthesis windows."""
+    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, photosynthesis windows, and O(1) catalytic barrier step-down."""
     d_pol = c.d - c.d_in_v  # 2
     t_over_t_soft = float(c.n_12 - d_pol) / float(c.d ** c.d_in_sq)  # 10 / 81
     soft_multipliers = (
@@ -606,6 +609,13 @@ def m_compute_allometry_atp_and_kinetics_invariants(
     vivo_over_thermal = h_per_atp / t_over_t_soft  # (8/3) / (10/81) = 108 / 5 = 21.6
     nernst_factor = float(c.d ** c.d) / float(c.n_12 - d_pol)  # 27 / 10 = 2.7
     v_rest_in_vsoft = -nernst_factor * t_over_t_soft  # -(27/10)*(10/81) = -1/3
+    burgi_dunitz_rad = math.acos(-float(c.d_in_v) / float(c.d))  # arccos(-1/3)
+    cat_ladder = (
+        float(c.n_hier),
+        float(c.n_hier - c.d),
+        float(c.n_hier - c.d - d_pol),
+        c.s_0,
+    )  # (8.0, 5.0, 3.0, 0.5)
 
     return MAllometryAtpAndKineticsInvariants(
         kleiber_metabolic_exponent=float(c.d) / float(c.d_in_sq),
@@ -624,6 +634,9 @@ def m_compute_allometry_atp_and_kinetics_invariants(
         membrane_v_spike_in_vsoft=c.s_0,
         photosynthesis_red_edge_quanta_esoft=c.n_hier,
         photosynthesis_blue_edge_quanta_esoft=c.n_phi,
+        elementary_reaction_mechanisms_count=c.d_in_sq,
+        burgi_dunitz_attack_angle_rad=burgi_dunitz_rad,
+        catalytic_barrier_ladder_in_esoft=cat_ladder,
         neutral_ph_invariant=c.d_out_v,
         water_pkw_invariant=d_pol * c.d_out_v,
     )

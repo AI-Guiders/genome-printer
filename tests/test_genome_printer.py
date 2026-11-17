@@ -393,6 +393,18 @@ def test_m_chemistry_and_t_projector() -> None:
     assert math.isclose(ak.membrane_v_spike_in_vsoft, M_CARRIER.s_0, abs_tol=1e-12)
     assert ak.photosynthesis_red_edge_quanta_esoft == M_CARRIER.n_hier
     assert ak.photosynthesis_blue_edge_quanta_esoft == M_CARRIER.n_phi
+    assert ak.elementary_reaction_mechanisms_count == M_CARRIER.d_in_sq
+    assert math.isclose(
+        ak.burgi_dunitz_attack_angle_rad,
+        math.acos(-float(M_CARRIER.d_in_v) / float(M_CARRIER.d)),
+        abs_tol=1e-12,
+    )
+    assert ak.catalytic_barrier_ladder_in_esoft == (
+        float(M_CARRIER.n_hier),
+        float(M_CARRIER.d_out_e),
+        float(M_CARRIER.d),
+        M_CARRIER.s_0,
+    )
     assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
     assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
 
