@@ -669,6 +669,19 @@ class MLocalGatesSolidStateNeuroAndPhotoInvariants:
     pentatonic_steps: int  # d_out(E) = 5
     pythagorean_comma_ratio: float  # (3/2)^12 / 2^7 = 531441 / 524288 ~ 1.013643
 
+    # 5. Discrete proofreading cascade (N_phi^-2k), Eigen polymer ceilings (169, 28561, 4.83M, 816M),
+    #    Caspar-Klug icosahedral viral capsid spheres N_shell(m)=10m^2+2, and 13-protofilament microtubule / kinesin 21*kappa*a0
+    eigen_polymer_ceiling_ladder: tuple[int, int, int, int]  # (13^2, 13^4, 13^6, 13^8) = (169, 28561, 4826809, 815730721)
+    proofreading_error_ladder: tuple[float, float, float, float]  # (1/13^2, 1/13^4, 1/13^6, 1/13^8)
+    eukaryotic_haploid_bp_ceiling: int  # d * 13^8 = 2_447_192_163 (~2.45e9 bp)
+    caspar_klug_principal_t_numbers: tuple[int, int, int, int, int]  # (1, 4, 9, 16, 25)
+    caspar_klug_principal_capsomers: tuple[int, int, int, int, int]  # N_shell(1..5) = (12, 42, 92, 162, 252)
+    caspar_klug_skew_t7_capsomers: int  # 10 * d_out(V) + 2 = 72 = |square| * |N_12|
+    microtubule_protofilaments: int  # N_phi = 13
+    microtubule_seam_monomer_shift: int  # d = 3
+    tubulin_monomer_in_kappa_a0: float  # N_classes * s_0 = 10.5 (~3.929 nm)
+    kinesin_step_dimer_in_kappa_a0: int  # N_classes = 21 (~7.858 nm)
+
 
 def m_compute_local_gates_solid_neuro_photo_invariants(
     c: MCarrierConstants = M_CARRIER,
@@ -710,6 +723,37 @@ def m_compute_local_gates_solid_neuro_photo_invariants(
     cell_bits_tick = c.d_in_sq * c.mod_bits  # 36
     cell_bits_two_tick = d_pol * cell_bits_tick  # 72
 
+    eigen_ceilings = (
+        c.n_phi ** (d_pol * c.d_in_v),
+        c.n_phi ** (d_pol * c.d_in_e),
+        c.n_phi ** (d_pol * c.d),
+        c.n_phi ** (d_pol * c.d_in_sq),
+    )  # (169, 28561, 4826809, 815730721)
+    proofreading_errs = (
+        float(c.d_in_v) / float(eigen_ceilings[0]),
+        float(c.d_in_v) / float(eigen_ceilings[1]),
+        float(c.d_in_v) / float(eigen_ceilings[2]),
+        float(c.d_in_v) / float(eigen_ceilings[3]),
+    )
+    euk_bp_ceiling = c.d * eigen_ceilings[c.d]  # 3 * 13^8 = 2_447_192_163
+
+    shell_coeff = c.n_12 - d_pol  # 10
+    ck_t_nums = (
+        c.d_in_v * c.d_in_v,
+        c.d_in_e * c.d_in_e,
+        c.d * c.d,
+        c.d_in_sq * c.d_in_sq,
+        c.d_out_e * c.d_out_e,
+    )  # (1, 4, 9, 16, 25)
+    ck_capsomers = (
+        shell_coeff * ck_t_nums[0] + d_pol,
+        shell_coeff * ck_t_nums[1] + d_pol,
+        shell_coeff * ck_t_nums[2] + d_pol,
+        shell_coeff * ck_t_nums[3] + d_pol,
+        shell_coeff * ck_t_nums[4] + d_pol,
+    )  # (12, 42, 92, 162, 252) = N_shell(1..5)
+    ck_t7_capsomers = shell_coeff * c.d_out_v + d_pol  # 72 = |square| * |N_12|
+
     return MLocalGatesSolidStateNeuroAndPhotoInvariants(
         heisenberg_threshold_ticks=c.delta_phi_disc,
         heisenberg_deadband_states=deadband,
@@ -743,6 +787,16 @@ def m_compute_local_gates_solid_neuro_photo_invariants(
         diatonic_steps=c.d_out_v,
         pentatonic_steps=c.d_out_e,
         pythagorean_comma_ratio=pyth_comma,
+        eigen_polymer_ceiling_ladder=eigen_ceilings,
+        proofreading_error_ladder=proofreading_errs,
+        eukaryotic_haploid_bp_ceiling=euk_bp_ceiling,
+        caspar_klug_principal_t_numbers=ck_t_nums,
+        caspar_klug_principal_capsomers=ck_capsomers,
+        caspar_klug_skew_t7_capsomers=ck_t7_capsomers,
+        microtubule_protofilaments=c.n_phi,
+        microtubule_seam_monomer_shift=c.d,
+        tubulin_monomer_in_kappa_a0=float(c.n_classes_21) * c.s_0,
+        kinesin_step_dimer_in_kappa_a0=c.n_classes_21,
     )
 
 
