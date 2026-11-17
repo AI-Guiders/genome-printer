@@ -389,12 +389,18 @@ def test_m_chemistry_and_t_projector() -> None:
     assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
     assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
 
-    # Local Heisenberg/Pauli gates, Cauchy solid-state, FQHE, Hodgkin-Huxley, photosynthesis, and 12=7+5 harmony
+    # Local Heisenberg/Pauli gates, 4-level info-equivalence hierarchy, Cauchy solid-state, FQHE, Hodgkin-Huxley, photosynthesis, and 12=7+5 harmony
     lg = m_compute_local_gates_solid_neuro_photo_invariants()
     assert lg.heisenberg_deadband_states == (M_CARRIER.d ** M_CARRIER.d_in_sq)
     assert lg.heisenberg_deadband_states + lg.heisenberg_active_ring_states == M_CARRIER.n_ring
     assert lg.pauli_impulse_ticks == M_CARRIER.n_ring // d_pol
     assert lg.s1_pauli_lightcone_delay_ticks == d_pol
+    assert lg.info_equiv_pq_int_levels * lg.info_equiv_pq_frac_states == M_CARRIER.n_ring
+    assert lg.info_equiv_gauge_clique_orbits == (M_CARRIER.n_12, d_pol * M_CARRIER.n_12, M_CARRIER.n_hier)
+    assert lg.info_equiv_octahedral_group_order == d_pol * d_pol * M_CARRIER.n_12
+    assert lg.info_equiv_spherical_channels_count == M_CARRIER.d_in_sq
+    assert lg.info_equiv_macro_cell_bits_per_tick == M_CARRIER.d_in_sq * M_CARRIER.mod_bits
+    assert lg.info_equiv_macro_cell_bits_two_tick == d_pol * lg.info_equiv_macro_cell_bits_per_tick
     assert math.isclose(
         lg.cauchy_poisson_ratio,
         float(M_CARRIER.d_in_v) / float(M_CARRIER.d_in_sq),

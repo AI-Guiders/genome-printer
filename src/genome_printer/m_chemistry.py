@@ -628,12 +628,20 @@ def m_compute_allometry_atp_and_kinetics_invariants(
 class MLocalGatesSolidStateNeuroAndPhotoInvariants:
     """Dimensionless M-layer invariants of local Heisenberg/Pauli gates, Cauchy solid-state, FQHE, Hodgkin-Huxley, photosynthesis, and acoustics."""
 
-    # 1. Strictly local Heisenberg-Newton gate (|Phi| < 41 -> 0) and local Pauli gate (Phi_Pauli = 256 -> Z_next = -Z_past)
+    # 1. Strictly local Heisenberg-Newton gate (|Phi| < 41 -> 0), local Pauli gate (Phi_Pauli = 256 -> Z_next = -Z_past),
+    #    and the 4-level hierarchy of info-equivalence classes (E_PQ, E_Heis, E_gauge, E_B)
     heisenberg_threshold_ticks: int  # Delta_phi_disc = 41
     heisenberg_deadband_states: int  # 2 * Delta_phi_disc - 1 = 81 = d^4 = 3^4 (non-injective inertial deadband)
     heisenberg_active_ring_states: int  # N_ring - 81 = 431
     pauli_impulse_ticks: int  # Phi_Pauli = N_ring // 2 = 256 (exact half-ring -> dZ = -2*Z_curr, phase-reversal mirror)
     s1_pauli_lightcone_delay_ticks: int  # d - 1 = 2 ticks before disjoint S_1 parallel spinors collide at x_0
+    info_equiv_pq_int_levels: int  # 2^int_bits = 2^3 = 8 integer levels R in Z_8
+    info_equiv_pq_frac_states: int  # 2^frac_bits = 2^6 = 64 = K_P sub-quantum mantissa states per integer level R
+    info_equiv_gauge_clique_orbits: tuple[int, int, int]  # (K_2, K_3, K_4) = (12, 24, 8) for U(1) x SU(2) x SU(3)
+    info_equiv_octahedral_group_order: int  # |O_h| = 2 * 24 = 48 automorphisms of cuboctahedron S_1
+    info_equiv_spherical_channels_count: int  # d_in(sq) = 4 symmetry equivalence classes (V, E, square, triangle) on S_m
+    info_equiv_macro_cell_bits_per_tick: int  # d_in(sq) * mod_bits = 4 * 9 = 36 bits per cell per tick
+    info_equiv_macro_cell_bits_two_tick: int  # 2 * 36 = 72 bits per two-tick leapfrog window (Z_curr, Z_past)
 
     # 2. Solid-state elasticity (Cauchy central-force FCC N12), Dulong-Petit / Debye, and Laughlin-Jain FQHE
     cauchy_poisson_ratio: float  # d_in(V) / d_in(sq) = 1 / 4 = 0.25
@@ -695,12 +703,26 @@ def m_compute_local_gates_solid_neuro_photo_invariants(
     fifth = float(c.d) / float(d_pol)  # 3/2
     pyth_comma = (fifth ** c.n_12) / float(1 << c.d_out_v)  # (3/2)^12 / 2^7
 
+    pq_int_levels = 1 << c.d  # 2^3 = 8
+    pq_frac_states = 1 << c.frac_bits  # 2^6 = 64 = K_P
+    gauge_cliques = (c.n_12, d_pol * c.n_12, c.n_hier)  # (12, 24, 8)
+    octahedral_order = d_pol * d_pol * c.n_12  # 48
+    cell_bits_tick = c.d_in_sq * c.mod_bits  # 36
+    cell_bits_two_tick = d_pol * cell_bits_tick  # 72
+
     return MLocalGatesSolidStateNeuroAndPhotoInvariants(
         heisenberg_threshold_ticks=c.delta_phi_disc,
         heisenberg_deadband_states=deadband,
         heisenberg_active_ring_states=active_ring,
         pauli_impulse_ticks=c.phi_pauli,
         s1_pauli_lightcone_delay_ticks=d_pol,
+        info_equiv_pq_int_levels=pq_int_levels,
+        info_equiv_pq_frac_states=pq_frac_states,
+        info_equiv_gauge_clique_orbits=gauge_cliques,
+        info_equiv_octahedral_group_order=octahedral_order,
+        info_equiv_spherical_channels_count=c.d_in_sq,
+        info_equiv_macro_cell_bits_per_tick=cell_bits_tick,
+        info_equiv_macro_cell_bits_two_tick=cell_bits_two_tick,
         cauchy_poisson_ratio=nu_cauchy,
         cauchy_shear_to_bulk_ratio=g_over_k,
         cauchy_young_to_shear_ratio=e_over_g,
