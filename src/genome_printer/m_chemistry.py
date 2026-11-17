@@ -156,7 +156,7 @@ def m_compute_hbond_phase_ratios(c: MCarrierConstants = M_CARRIER) -> MHBondPhas
 
 @dataclass(frozen=True)
 class MThermalMobilityWindow:
-    """Dimensionless carrier mobility window [1/floor(B_V), d_in(sq)/d^3] * E_soft^(m) and hierarchy bound E_hard >= |N_12| * E_soft^(m)."""
+    """Dimensionless carrier mobility window [1/floor(B_V), d_in(sq)/d^3] * E_soft^(m), E_hard >= |N_12| * E_soft^(m), and 5:6:7 geometry."""
 
     rung_m: int  # -1 (cryogenic fus_quantum = 2/7), 0 (unit E_HB = 1), +1 (vap_quantum = 2)
     e_soft_in_ehb_quanta: float
@@ -165,21 +165,32 @@ class MThermalMobilityWindow:
     t_max_over_t_hb: float  # (d_in(sq) / d^3) * e_soft_in_ehb_quanta
     reduced_wavelength_in_a0: float  # ((d - 1) * N_HB) / (alpha_fs * e_soft_in_ehb_quanta) in {441, 126, 63} / alpha_fs (zero pi!)
     reduced_wavelength_dh: float  # reduced_wavelength_in_a0 * N_a0 * dh
+    scale_invariant_5_6_7: int  # |square| + m in {d_out(E)=5, |square|=6, d_out(V)=7}
+    backbone_bond_in_kappa_a0: float  # (d_in(sq) + m*(d-1)/d) in {10/3, 12/3=4, 14/3}
+    helix_pitch_in_kappa_a0: float  # ((|N_12| + |square|) / d_out(E)) * backbone_bond_in_kappa_a0
+    membrane_tm18_in_kappa_a0: float  # scale_invariant_5_6_7 * |N_12| in {60, 72, 84}
+    duplex_stack_in_kappa_a0: float  # (mod_bits / d_in(sq)) * backbone_bond_in_kappa_a0
 
 
 def m_compute_life_thermal_windows(
     c: MCarrierConstants = M_CARRIER,
 ) -> tuple[MThermalMobilityWindow, ...]:
-    """Compute the 3 dimensionless thermal mobility windows inherited from `MHBondPhaseRatios` (2/7, 1, 2 E_HB)."""
+    """Compute the 3 dimensionless thermal mobility windows inherited from `MHBondPhaseRatios` (2/7, 1, 2 E_HB) and their 5:6:7 geometry."""
+    d_pol = c.d - c.d_in_v
     ratios = m_compute_hbond_phase_ratios(c=c)
     quanta_ladder = (
-        (-1, ratios.fus_in_ehb_quanta),
-        (0, 1.0),
-        (1, ratios.vap_in_ehb_quanta),
+        (-c.d_in_v, ratios.fus_in_ehb_quanta),
+        (0, float(c.d_in_v)),
+        (c.d_in_v, ratios.vap_in_ehb_quanta),
     )
+    n_tm_units = c.n_12 + c.n_squares  # 18
+    n_alpha_turn = float(n_tm_units) / float(c.d_out_e)  # 18 / 5 = 3.6
+    stack_over_bond = float(c.mod_bits) / float(c.d_in_sq)  # 9 / 4
     out: list[MThermalMobilityWindow] = []
     for rung, q in quanta_ladder:
         wl_bar_a0 = (ratios.n_hb_divisor / q) * c.reduced_lyman_wavelength_in_a0
+        scale_k = c.n_squares + rung  # {5, 6, 7}
+        r_bond_ka0 = float(c.d_in_sq) + float(rung * d_pol) / float(c.d)  # {10/3, 4, 14/3}
         out.append(
             MThermalMobilityWindow(
                 rung_m=rung,
@@ -189,6 +200,11 @@ def m_compute_life_thermal_windows(
                 t_max_over_t_hb=ratios.t_boil_over_t_hb * q,
                 reduced_wavelength_in_a0=wl_bar_a0,
                 reduced_wavelength_dh=wl_bar_a0 * c.a_0_dh,
+                scale_invariant_5_6_7=scale_k,
+                backbone_bond_in_kappa_a0=r_bond_ka0,
+                helix_pitch_in_kappa_a0=n_alpha_turn * r_bond_ka0,
+                membrane_tm18_in_kappa_a0=float(n_tm_units) * r_bond_ka0,
+                duplex_stack_in_kappa_a0=stack_over_bond * r_bond_ka0,
             )
         )
     return tuple(out)

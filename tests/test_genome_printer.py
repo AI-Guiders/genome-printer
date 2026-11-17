@@ -168,6 +168,17 @@ def test_m_chemistry_and_t_projector() -> None:
     # Three dimensionless & SI thermal mobility windows inherited directly from MHBondPhaseRatios
     windows_m = m_compute_life_thermal_windows()
     assert [w.rung_m for w in windows_m] == [-1, 0, 1]
+    assert [w.scale_invariant_5_6_7 for w in windows_m] == [
+        M_CARRIER.d_out_e,
+        M_CARRIER.n_squares,
+        M_CARRIER.d_out_v,
+    ]
+    for w_m in windows_m:
+        assert math.isclose(
+            w_m.membrane_tm18_in_kappa_a0,
+            float(w_m.scale_invariant_5_6_7 * M_CARRIER.n_12),
+            rel_tol=1e-12,
+        )
     assert math.isclose(windows_m[0].e_soft_in_ehb_quanta, ratios.fus_in_ehb_quanta, rel_tol=1e-12)
     assert math.isclose(windows_m[1].e_soft_in_ehb_quanta, 1.0, rel_tol=1e-12)
     assert math.isclose(windows_m[2].e_soft_in_ehb_quanta, ratios.vap_in_ehb_quanta, rel_tol=1e-12)
