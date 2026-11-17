@@ -363,33 +363,40 @@ def test_m_chemistry_and_t_projector() -> None:
         0.0,
         abs_tol=1e-12,
     )
-    assert ak.lifetime_respiratory_cycles == (M_CARRIER.n_ring ** M_CARRIER.d)
-    assert ak.lifetime_heartbeats == M_CARRIER.n_hier * ak.lifetime_respiratory_cycles
     assert math.isclose(
-        ak.homeothermy_t_body_over_t_hb,
+        ak.homeothermy_t_over_t_soft,
         float(M_CARRIER.n_12 - d_pol) / float(M_CARRIER.d ** M_CARRIER.d_in_sq),
         abs_tol=1e-12,
     )
+    assert len(ak.homeothermy_t_over_t_hb_worlds) == M_CARRIER.d
     assert math.isclose(
         ak.protons_per_atp_ratio,
         float(M_CARRIER.n_hier) / float(M_CARRIER.d),
         abs_tol=1e-12,
     )
     assert math.isclose(
-        ak.atp_standard_dg0_in_ehb,
+        ak.standard_macroerg_in_esoft,
         float(M_CARRIER.d) * M_CARRIER.s_0,
         abs_tol=1e-12,
     )
     assert math.isclose(
-        ak.atp_physiological_dg_in_ehb,
-        ak.water_autoionization_dh_in_ehb,
+        ak.vivo_macroerg_in_esoft / ak.homeothermy_t_over_t_soft,
+        ak.macroerg_to_thermal_quantum_ratio,
         abs_tol=1e-12,
     )
-    assert math.isclose(ak.grotthuss_hop_barrier_in_ehb, M_CARRIER.s_0, abs_tol=1e-12)
+    assert math.isclose(ak.hop_barrier_in_esoft, M_CARRIER.s_0, abs_tol=1e-12)
+    assert math.isclose(
+        ak.membrane_v_rest_in_vsoft,
+        -float(M_CARRIER.d_in_v) / float(M_CARRIER.d),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(ak.membrane_v_spike_in_vsoft, M_CARRIER.s_0, abs_tol=1e-12)
+    assert ak.photosynthesis_red_edge_quanta_esoft == M_CARRIER.n_hier
+    assert ak.photosynthesis_blue_edge_quanta_esoft == M_CARRIER.n_phi
     assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
     assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
 
-    # Local Heisenberg/Pauli gates, 4-level info-equivalence hierarchy, Cauchy solid-state, FQHE, Hodgkin-Huxley, photosynthesis, and 12=7+5 harmony
+    # Local Heisenberg/Pauli gates, 4-level info-equivalence hierarchy, Cauchy solid-state, FQHE, and Caspar-Klug shells
     lg = m_compute_local_gates_solid_neuro_photo_invariants()
     assert lg.heisenberg_deadband_states == (M_CARRIER.d ** M_CARRIER.d_in_sq)
     assert lg.heisenberg_deadband_states + lg.heisenberg_active_ring_states == M_CARRIER.n_ring
@@ -413,20 +420,6 @@ def test_m_chemistry_and_t_projector() -> None:
         float(M_CARRIER.d) / float(M_CARRIER.d_out_e),
         abs_tol=1e-12,
     )
-    assert math.isclose(
-        lg.neuron_spike_amplitude_in_ehb,
-        M_CARRIER.s_0,
-        abs_tol=1e-12,
-    )
-    assert lg.chromatic_semitones == lg.diatonic_steps + lg.pentatonic_steps
-    assert lg.pythagorean_comma_ratio > 1.0
-    assert lg.eigen_polymer_ceiling_ladder == (
-        M_CARRIER.n_phi ** (d_pol * M_CARRIER.d_in_v),
-        M_CARRIER.n_phi ** (d_pol * M_CARRIER.d_in_e),
-        M_CARRIER.n_phi ** (d_pol * M_CARRIER.d),
-        M_CARRIER.n_phi ** (d_pol * M_CARRIER.d_in_sq),
-    )
-    assert lg.eukaryotic_haploid_bp_ceiling == M_CARRIER.d * lg.eigen_polymer_ceiling_ladder[M_CARRIER.d]
     assert lg.caspar_klug_principal_capsomers[:3] == (
         M_CARRIER.n_shell_1,
         M_CARRIER.n_shell_2,
@@ -434,8 +427,6 @@ def test_m_chemistry_and_t_projector() -> None:
     )
     assert lg.caspar_klug_skew_t7_capsomers == M_CARRIER.n_squares * M_CARRIER.n_12
     assert lg.microtubule_protofilaments == M_CARRIER.n_phi
-    assert lg.tubulin_monomer_in_kappa_a0 == M_CARRIER.d_out_e * M_CARRIER.n_classes_21
-    assert lg.kinesin_step_dimer_in_kappa_a0 == (M_CARRIER.n_12 - d_pol) * M_CARRIER.n_classes_21
 
 
 

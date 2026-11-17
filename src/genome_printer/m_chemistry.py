@@ -568,25 +568,24 @@ def m_compute_cuboctahedral_aperture_and_gas_invariants(
 
 @dataclass(frozen=True)
 class MAllometryAtpAndKineticsInvariants:
-    """Dimensionless M-layer invariants of allometric scaling, F0F1-ATP bioenergetics, and water kinetics."""
+    """Dimensionless M-layer invariants of universal 3-world (m in {-1,0,+1}) allometry, bioenergetics, homeostasis, electrophysiology, and photosynthesis."""
 
     kleiber_metabolic_exponent: float  # d / d_in(sq) = d / (d + 1) = 3 / 4 = 0.75
     physiological_freq_exponent: float  # -d_in(V) / d_in(sq) = -1 / 4 = -0.25
     lifespan_scaling_exponent: float  # +d_in(V) / d_in(sq) = +1 / 4 = +0.25
-    heart_to_breath_ratio_min: int  # d_in(sq) = 4
-    heart_to_breath_ratio_max: int  # N_hier = 8
-    lifetime_respiratory_cycles: int  # N_ring^d = 512^3 = 2^27 = 134,217,728
-    lifetime_heartbeats: int  # N_hier * N_ring^d = 8 * 512^3 = 2^30 = 1,073,741,824
-    homeothermy_t_body_over_t_hb: float  # (|N_12| - 2) / d^4 = 10 / 81 (~309.40 K = 36.25 C)
-    f0_rotor_c_ring_subunits: int  # N_hier = 8 (animal mitochondrial c_8 ring)
+    homeothermy_t_over_t_soft: float  # (|N_12| - 2) / d^4 = 10 / 81 (universal 1/3 point of liquid solvent window [9/81, 12/81])
+    homeothermy_t_over_t_hb_worlds: tuple[float, float, float]  # (2/7, 1, 2) * 10/81 for m in {-1, 0, +1} (~88.4 K Titan, 309.4 K Earth, 618.8 K Venus)
+    f0_rotor_c_ring_subunits: int  # N_hier = 8
     f1_catalytic_beta_sites: int  # d = 3 (alpha_3 beta_3 rotary head, 120 deg step)
     protons_per_atp_ratio: float  # N_hier / d = 8 / 3 ~ 2.6667
-    atp_standard_dg0_in_ehb: float  # d * s_0 = 3 / 2 = 1.5 E_HB (~31.26 kJ/mol)
-    atp_physiological_dg_in_ehb: float  # N_hier / d = 8 / 3 ~ 2.6667 E_HB (~55.57 kJ/mol)
-    pmf_per_proton_in_ehb: float  # 1.0 E_HB (~216 mV membrane proton-motive force)
-    grotthuss_hop_barrier_in_ehb: float  # s_0 = 1 / 2 = 0.5 E_HB (~10.42 kJ/mol = 0.108 eV)
-    water_autoionization_dh_in_ehb: float  # N_hier / d = 8 / 3 ~ 2.6667 E_HB (~55.57 kJ/mol)
-    water_autoionization_dg_in_ehb: float  # d_in(sq) = 4.0 E_HB (~83.35 kJ/mol)
+    standard_macroerg_in_esoft: float  # d * s_0 = 3 / 2 = 1.5 E_soft^(m) (~8.93, 31.26, 62.51 kJ/mol for m=-1,0,+1)
+    vivo_macroerg_in_esoft: float  # N_hier / d = 8 / 3 ~ 2.6667 E_soft^(m) (~15.88, 55.57, 111.13 kJ/mol for m=-1,0,+1)
+    macroerg_to_thermal_quantum_ratio: float  # (8/3) / (10/81) = 108 / 5 = 21.6 (invariant across all 3 life worlds!)
+    hop_barrier_in_esoft: float  # s_0 = 1 / 2 = 0.5 E_soft^(m) (~2.98, 10.42, 20.84 kJ/mol for m=-1,0,+1)
+    membrane_v_rest_in_vsoft: float  # -(d^3 / 10) * (10 / 81) = -27 / 81 = -1 / d = -1/3 V_soft^(m) (~-20.6, -72.0, -144.0 mV)
+    membrane_v_spike_in_vsoft: float  # s_0 = 1 / 2 V_soft^(m) (~30.9, 108.0, 216.0 mV)
+    photosynthesis_red_edge_quanta_esoft: int  # N_hier = 8 E_soft^(m) (~2512 nm Titan IR window, 717.6 nm Earth P700, 358.8 nm Venus UV absorber)
+    photosynthesis_blue_edge_quanta_esoft: int  # N_phi = 13 E_soft^(m) (~1546 nm Titan IR window, 441.6 nm Earth Soret, 220.8 nm Venus UV edge)
     neutral_ph_invariant: int  # d_out(V) = 7
     water_pkw_invariant: int  # 2 * d_out(V) = 14
 
@@ -594,31 +593,37 @@ class MAllometryAtpAndKineticsInvariants:
 def m_compute_allometry_atp_and_kinetics_invariants(
     c: MCarrierConstants = M_CARRIER,
 ) -> MAllometryAtpAndKineticsInvariants:
-    """Derive Kleiber 3/4 allometry, F0F1-ATP synthase 8/3 bioenergetics, and Grotthuss / pKw water kinetics."""
+    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, and photosynthesis windows."""
     d_pol = c.d - c.d_in_v  # 2
-    n_breaths = c.n_ring ** c.d  # 512^3 = 134,217,728
-    n_beats = c.n_hier * n_breaths  # 8 * 512^3 = 1,073,741,824
-    t_body_ratio = float(c.n_12 - d_pol) / float(c.d ** c.d_in_sq)  # 10 / 81
+    t_over_t_soft = float(c.n_12 - d_pol) / float(c.d ** c.d_in_sq)  # 10 / 81
+    soft_multipliers = (
+        float(d_pol) / float(c.d_out_v),
+        float(c.d_in_v),
+        float(d_pol),
+    )  # (2/7, 1.0, 2.0)
+    t_worlds = tuple(m_fac * t_over_t_soft for m_fac in soft_multipliers)
     h_per_atp = float(c.n_hier) / float(c.d)  # 8 / 3
+    vivo_over_thermal = h_per_atp / t_over_t_soft  # (8/3) / (10/81) = 108 / 5 = 21.6
+    nernst_factor = float(c.d ** c.d) / float(c.n_12 - d_pol)  # 27 / 10 = 2.7
+    v_rest_in_vsoft = -nernst_factor * t_over_t_soft  # -(27/10)*(10/81) = -1/3
 
     return MAllometryAtpAndKineticsInvariants(
         kleiber_metabolic_exponent=float(c.d) / float(c.d_in_sq),
         physiological_freq_exponent=-float(c.d_in_v) / float(c.d_in_sq),
         lifespan_scaling_exponent=float(c.d_in_v) / float(c.d_in_sq),
-        heart_to_breath_ratio_min=c.d_in_sq,
-        heart_to_breath_ratio_max=c.n_hier,
-        lifetime_respiratory_cycles=n_breaths,
-        lifetime_heartbeats=n_beats,
-        homeothermy_t_body_over_t_hb=t_body_ratio,
+        homeothermy_t_over_t_soft=t_over_t_soft,
+        homeothermy_t_over_t_hb_worlds=t_worlds,
         f0_rotor_c_ring_subunits=c.n_hier,
         f1_catalytic_beta_sites=c.d,
         protons_per_atp_ratio=h_per_atp,
-        atp_standard_dg0_in_ehb=float(c.d) * c.s_0,
-        atp_physiological_dg_in_ehb=h_per_atp,
-        pmf_per_proton_in_ehb=float(c.d_in_v),
-        grotthuss_hop_barrier_in_ehb=c.s_0,
-        water_autoionization_dh_in_ehb=h_per_atp,
-        water_autoionization_dg_in_ehb=float(c.d_in_sq),
+        standard_macroerg_in_esoft=float(c.d) * c.s_0,
+        vivo_macroerg_in_esoft=h_per_atp,
+        macroerg_to_thermal_quantum_ratio=vivo_over_thermal,
+        hop_barrier_in_esoft=c.s_0,
+        membrane_v_rest_in_vsoft=v_rest_in_vsoft,
+        membrane_v_spike_in_vsoft=c.s_0,
+        photosynthesis_red_edge_quanta_esoft=c.n_hier,
+        photosynthesis_blue_edge_quanta_esoft=c.n_phi,
         neutral_ph_invariant=c.d_out_v,
         water_pkw_invariant=d_pol * c.d_out_v,
     )
@@ -626,7 +631,7 @@ def m_compute_allometry_atp_and_kinetics_invariants(
 
 @dataclass(frozen=True)
 class MLocalGatesSolidStateNeuroAndPhotoInvariants:
-    """Dimensionless M-layer invariants of local Heisenberg/Pauli gates, Cauchy solid-state, FQHE, Hodgkin-Huxley, photosynthesis, and acoustics."""
+    """Dimensionless M-layer invariants of local Heisenberg/Pauli gates, 4-level info-equivalence, Cauchy solid-state, FQHE, and Caspar-Klug shells."""
 
     # 1. Strictly local Heisenberg-Newton gate (|Phi| < 41 -> 0), local Pauli gate (Phi_Pauli = 256 -> Z_next = -Z_past),
     #    and the 4-level hierarchy of info-equivalence classes (E_PQ, E_Heis, E_gauge, E_B)
@@ -651,42 +656,18 @@ class MLocalGatesSolidStateNeuroAndPhotoInvariants:
     debye_low_t_power: int  # d = 3 (C_V ~ T^3)
     fqhe_laughlin_jain_fractions: tuple[float, float, float]  # (1/d, 2/d_out(E), d/d_out(V)) = (1/3, 2/5, 3/7)
 
-    # 3. Neurophysiology (Hodgkin-Huxley action potential in E_HB / e quanta)
-    nak_pump_na_out_per_atp: int  # d = 3
-    nak_pump_k_in_per_atp: int  # d - 1 = 2
-    neuron_v_rest_in_ehb: float  # -1 / d = -1 / 3 E_HB (~ -71.99 mV)
-    neuron_v_thresh_in_ehb: float  # -1 / d_in(sq) = -1 / 4 E_HB (~ -53.99 mV)
-    neuron_v_peak_in_ehb: float  # +1 / |square| = +1 / 6 E_HB (~ +35.99 mV)
-    neuron_spike_amplitude_in_ehb: float  # 1/d + 1/|square| = 1/2 = s_0 E_HB (~ 107.98 mV)
-
-    # 4. Quantum optics of photosynthesis & vision (in E_HB quanta) and 12-tone acoustic harmony
-    photosynthesis_quanta_ladder: tuple[float, float, float, float, float]  # (8, 8.5, 9, 10, 13) E_HB
-    oec_mn_cluster_ions: int  # d_in(sq) = 4 (Mn_4CaO_5 cluster)
-    oec_kok_cycle_states: int  # d_out(E) = 5 (S_0..S_4)
-    z_scheme_photons_per_o2: int  # N_hier = 8
-    chromatic_semitones: int  # |N_12| = 12
-    diatonic_steps: int  # d_out(V) = 7
-    pentatonic_steps: int  # d_out(E) = 5
-    pythagorean_comma_ratio: float  # (3/2)^12 / 2^7 = 531441 / 524288 ~ 1.013643
-
-    # 5. Discrete proofreading cascade (N_phi^-2k), Eigen polymer ceilings (169, 28561, 4.83M, 816M),
-    #    Caspar-Klug icosahedral viral capsid spheres N_shell(m)=10m^2+2, and 13-protofilament microtubule / kinesin 21*kappa*a0
-    eigen_polymer_ceiling_ladder: tuple[int, int, int, int]  # (13^2, 13^4, 13^6, 13^8) = (169, 28561, 4826809, 815730721)
-    proofreading_error_ladder: tuple[float, float, float, float]  # (1/13^2, 1/13^4, 1/13^6, 1/13^8)
-    eukaryotic_haploid_bp_ceiling: int  # d * 13^8 = 2_447_192_163 (~2.45e9 bp)
+    # 3. Caspar-Klug icosahedral viral capsid spheres N_shell(m)=10m^2+2 on {111} and 13-protofilament microtubule closure
     caspar_klug_principal_t_numbers: tuple[int, int, int, int, int]  # (1, 4, 9, 16, 25)
     caspar_klug_principal_capsomers: tuple[int, int, int, int, int]  # N_shell(1..5) = (12, 42, 92, 162, 252)
     caspar_klug_skew_t7_capsomers: int  # 10 * d_out(V) + 2 = 72 = |square| * |N_12|
     microtubule_protofilaments: int  # N_phi = 13
     microtubule_seam_monomer_shift: int  # d = 3
-    tubulin_monomer_in_kappa_a0: int  # d_out(E) * N_classes = 5 * 21 = 105 (~39.29 A = 3.929 nm)
-    kinesin_step_dimer_in_kappa_a0: int  # (|N_12| - 2) * N_classes = 10 * 21 = 210 (~78.58 A = 7.858 nm)
 
 
 def m_compute_local_gates_solid_neuro_photo_invariants(
     c: MCarrierConstants = M_CARRIER,
 ) -> MLocalGatesSolidStateNeuroAndPhotoInvariants:
-    """Derive local Heisenberg/Pauli gate invariants, Cauchy elasticity, FQHE, Hodgkin-Huxley spike, photosynthesis, and 12=7+5 harmony."""
+    """Derive local Heisenberg/Pauli gate invariants, 4-level info-equivalence, Cauchy elasticity, FQHE, and Caspar-Klug capsid shells."""
     d_pol = c.d - c.d_in_v  # 2
     deadband = d_pol * c.delta_phi_disc - c.d_in_v  # 2 * 41 - 1 = 81 = 3^4
     active_ring = c.n_ring - deadband  # 512 - 81 = 431
@@ -700,42 +681,12 @@ def m_compute_local_gates_solid_neuro_photo_invariants(
         float(c.d) / float(c.d_out_v),
     )  # (1/3, 2/5, 3/7)
 
-    v_rest = -float(c.d_in_v) / float(c.d)  # -1/3
-    v_thresh = -float(c.d_in_v) / float(c.d_in_sq)  # -1/4
-    v_peak = float(c.d_in_v) / float(c.n_squares)  # +1/6
-    v_spike = v_peak - v_rest  # 1/6 + 1/3 = 1/2 = s_0
-
-    photo_quanta = (
-        float(c.n_hier),
-        float(c.n_hier) + c.s_0,
-        float(c.mod_bits),
-        float(c.n_12 - d_pol),
-        float(c.n_phi),
-    )  # (8.0, 8.5, 9.0, 10.0, 13.0)
-
-    fifth = float(c.d) / float(d_pol)  # 3/2
-    pyth_comma = (fifth ** c.n_12) / float(1 << c.d_out_v)  # (3/2)^12 / 2^7
-
     pq_int_levels = 1 << c.d  # 2^3 = 8
     pq_frac_states = 1 << c.frac_bits  # 2^6 = 64 = K_P
     gauge_cliques = (c.n_12, d_pol * c.n_12, c.n_hier)  # (12, 24, 8)
     octahedral_order = d_pol * d_pol * c.n_12  # 48
     cell_bits_tick = c.d_in_sq * c.mod_bits  # 36
     cell_bits_two_tick = d_pol * cell_bits_tick  # 72
-
-    eigen_ceilings = (
-        c.n_phi ** (d_pol * c.d_in_v),
-        c.n_phi ** (d_pol * c.d_in_e),
-        c.n_phi ** (d_pol * c.d),
-        c.n_phi ** (d_pol * c.d_in_sq),
-    )  # (169, 28561, 4826809, 815730721)
-    proofreading_errs = (
-        float(c.d_in_v) / float(eigen_ceilings[0]),
-        float(c.d_in_v) / float(eigen_ceilings[1]),
-        float(c.d_in_v) / float(eigen_ceilings[2]),
-        float(c.d_in_v) / float(eigen_ceilings[3]),
-    )
-    euk_bp_ceiling = c.d * eigen_ceilings[c.d]  # 3 * 13^8 = 2_447_192_163
 
     shell_coeff = c.n_12 - d_pol  # 10
     ck_t_nums = (
@@ -773,30 +724,11 @@ def m_compute_local_gates_solid_neuro_photo_invariants(
         dulong_petit_cv_over_nk=c.d,
         debye_low_t_power=c.d,
         fqhe_laughlin_jain_fractions=fqhe,
-        nak_pump_na_out_per_atp=c.d,
-        nak_pump_k_in_per_atp=d_pol,
-        neuron_v_rest_in_ehb=v_rest,
-        neuron_v_thresh_in_ehb=v_thresh,
-        neuron_v_peak_in_ehb=v_peak,
-        neuron_spike_amplitude_in_ehb=v_spike,
-        photosynthesis_quanta_ladder=photo_quanta,
-        oec_mn_cluster_ions=c.d_in_sq,
-        oec_kok_cycle_states=c.d_out_e,
-        z_scheme_photons_per_o2=c.n_hier,
-        chromatic_semitones=c.n_12,
-        diatonic_steps=c.d_out_v,
-        pentatonic_steps=c.d_out_e,
-        pythagorean_comma_ratio=pyth_comma,
-        eigen_polymer_ceiling_ladder=eigen_ceilings,
-        proofreading_error_ladder=proofreading_errs,
-        eukaryotic_haploid_bp_ceiling=euk_bp_ceiling,
         caspar_klug_principal_t_numbers=ck_t_nums,
         caspar_klug_principal_capsomers=ck_capsomers,
         caspar_klug_skew_t7_capsomers=ck_t7_capsomers,
         microtubule_protofilaments=c.n_phi,
         microtubule_seam_monomer_shift=c.d,
-        tubulin_monomer_in_kappa_a0=c.d_out_e * c.n_classes_21,
-        kinesin_step_dimer_in_kappa_a0=shell_coeff * c.n_classes_21,
     )
 
 
