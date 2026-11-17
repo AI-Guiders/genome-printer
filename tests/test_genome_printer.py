@@ -23,6 +23,8 @@ from genome_printer import (
     m_sp3_bond_angle_cos,
     m_compute_hbond_phase_ratios,
     m_compute_life_thermal_windows,
+    m_compute_electron_cluster_structure,
+    m_compute_periodic_and_nuclear_shells,
     M_FRONTAL_TRACKS,
     M_MAJOR_GROOVE_SLOTS,
     M_RUMER_OCTET_I_STEMS,
@@ -213,6 +215,42 @@ def test_m_chemistry_and_t_projector() -> None:
             w_m.reduced_wavelength_in_a0 * M_CARRIER.a_0_dh,
             rel_tol=1e-12,
         )
+
+    # Electron internal 13-node cluster structure (B=0, |Q|=1) and d=3 axis generations
+    elec = m_compute_electron_cluster_structure()
+    d_pol = M_CARRIER.d - M_CARRIER.d_in_v
+    assert elec.baryon_number == 0
+    assert elec.cluster_nodes == M_CARRIER.n_phi
+    assert elec.axial_partition == (
+        M_CARRIER.d_in_v,
+        M_CARRIER.d_in_v,
+        M_CARRIER.d_lat_v,
+        M_CARRIER.d_out_v,
+    )
+    assert elec.generations_count == M_CARRIER.d
+    assert math.isclose(elec.koide_invariant, float(d_pol) / float(M_CARRIER.d), abs_tol=1e-12)
+    assert elec.open_mu_decay_channels == M_CARRIER.n_12 * (M_CARRIER.n_ring - M_CARRIER.n_phi)
+
+    # Full Periodic Table periods, noble gases, nuclear magic numbers, Pb-208 closure, N=184 island, and Z_max=137
+    per = m_compute_periodic_and_nuclear_shells()
+    assert len(per.period_lengths) == M_CARRIER.d_out_v
+    assert len(per.noble_gas_closures) == M_CARRIER.d_out_v
+    assert per.terminal_stable_z == d_pol * M_CARRIER.delta_phi_disc
+    assert per.terminal_stable_n == d_pol * M_CARRIER.n_hb
+    assert per.terminal_stable_a == per.terminal_stable_z + per.terminal_stable_n
+    assert per.terminal_stable_a == d_pol * M_CARRIER.n_hier * M_CARRIER.n_phi
+    assert per.nuclear_magic_high[-2] == per.terminal_stable_z
+    assert per.nuclear_magic_high[-1] == per.terminal_stable_n
+    assert per.island_of_stability_n == (
+        M_CARRIER.n_hier * ((M_CARRIER.n_hier ** d_pol) + M_CARRIER.d_out_e)
+    ) // M_CARRIER.d
+    assert per.island_of_stability_z_bounds == (
+        per.terminal_stable_n - M_CARRIER.n_12,
+        per.terminal_stable_n - M_CARRIER.n_squares,
+    )
+    assert per.electromagnetic_ceiling_z == (
+        (M_CARRIER.d_in_sq ** d_pol) + ((M_CARRIER.n_12 - M_CARRIER.d_in_v) ** d_pol)
+    )
 
 
 

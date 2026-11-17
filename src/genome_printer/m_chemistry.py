@@ -186,3 +186,112 @@ def m_compute_life_thermal_windows(
         )
     return tuple(out)
 
+
+@dataclass(frozen=True)
+class MElectronClusterStructure:
+    """Dimensionless M-layer internal structure of the B=0, |Q|=1 electron cluster and its d=3 axis generations."""
+
+    baryon_number: int  # 0 (no K_3 triangular clique)
+    cluster_nodes: int  # N_phi = 1 + |N_12| = 13
+    axial_partition: tuple[int, int, int, int]  # (1_core, d_in(V)=1, d_lat(V)=4, d_out(V)=7)
+    generations_count: int  # d = 3 orthogonal axes
+    koide_invariant: float  # (d - 1) / d = 2 / 3
+    generation_mass_ratios: tuple[float, float, float]  # (1, m_mu/m_e, m_tau/m_e)
+    open_mu_decay_channels: int  # |N_12| * (N_ring - N_phi) = 5988
+
+
+def m_compute_electron_cluster_structure(
+    c: MCarrierConstants = M_CARRIER,
+) -> MElectronClusterStructure:
+    """Derive the 13-node internal partition and d=3 generation mass ratios of the B=0 electron rotor."""
+    d_pol = c.d - c.d_in_v
+    axial = (c.d_in_v, c.d_in_v, c.d_lat_v, c.d_out_v)
+    delta_0 = float(d_pol) / float(c.mod_bits)
+    # 3 orthogonal axis projections of the 13-node rotor on FCC N_12
+    full_turn = 2.0 * math.acos(-1.0)
+    weights = sorted(
+        (1.0 + (1.0 / c.kappa) * math.cos(full_turn * float(g) / float(c.d) + delta_0)) ** d_pol
+        for g in range(c.d)
+    )
+    ratios = (
+        1.0,
+        weights[1] / weights[0],
+        weights[2] / weights[0],
+    )
+    koide_q = sum(weights) / (sum(math.sqrt(w) for w in weights) ** d_pol)
+    open_mu = c.n_12 * (c.n_ring - c.n_phi)
+    return MElectronClusterStructure(
+        baryon_number=0,
+        cluster_nodes=sum(axial),
+        axial_partition=axial,
+        generations_count=c.d,
+        koide_invariant=koide_q,
+        generation_mass_ratios=ratios,
+        open_mu_decay_channels=open_mu,
+    )
+
+
+@dataclass(frozen=True)
+class MPeriodicSystemStructure:
+    """Dimensionless M-layer periodic table and nuclear magic shell closure invariants."""
+
+    subshell_capacities: tuple[int, ...]  # (2, 6, 10, 14)
+    period_lengths: tuple[int, ...]  # (2, 8, 8, 18, 18, 32, 32)
+    noble_gas_closures: tuple[int, ...]  # (2, 10, 18, 36, 54, 86, 118)
+    nuclear_magic_low: tuple[int, ...]  # (2, 8, 20)
+    nuclear_magic_high: tuple[int, ...]  # (28, 50, 82, 126)
+    nuclear_magic_all: tuple[int, ...]  # (2, 8, 20, 28, 50, 82, 126)
+    terminal_stable_z: int  # 2 * Delta_phi_disc = 82 (Pb)
+    terminal_stable_n: int  # 2 * N_HB = 126
+    terminal_stable_a: int  # 2 * N_hier * N_phi = 208 (Pb-208)
+    island_of_stability_n: int  # M_high(N_hier = 8) = 184
+    island_of_stability_z_bounds: tuple[int, int]  # (126 - |N_12| = 114, 126 - |square| = 120)
+    electromagnetic_ceiling_z: int  # d_in(sq)^2 + (|N_12| - 1)^2 = 137
+
+
+def m_compute_periodic_and_nuclear_shells(
+    c: MCarrierConstants = M_CARRIER,
+) -> MPeriodicSystemStructure:
+    """Derive electronic periods, nuclear magic shells, Pb-208 terminal closure, N=184 island, and Z_max=137."""
+    d_pol = c.d - c.d_in_v
+    subshells = m_cuboctahedral_subshells(c=c)
+    caps = tuple(ch.spin_capacity for ch in subshells)
+
+    n_periods = c.d_out_v  # 7 periods up to Z = 118
+    p_lengths = tuple(
+        d_pol * (((p + d_pol) // d_pol) ** d_pol)
+        for p in range(c.d_in_v, n_periods + c.d_in_v)
+    )
+    nobles = tuple(sum(p_lengths[:i]) for i in range(c.d_in_v, n_periods + c.d_in_v))
+
+    low_k = (c.d_in_v, c.d_in_e, c.d_in_tri)
+    magic_low = tuple((k * (k + c.d_in_v) * (k + d_pol)) // c.d for k in low_k)
+
+    high_k = (c.d_in_sq, c.d_out_e, c.n_squares, c.d_out_v)
+    magic_high = tuple((k * ((k ** d_pol) + c.d_out_e)) // c.d for k in high_k)
+
+    z_term = d_pol * c.delta_phi_disc
+    n_term = d_pol * c.n_hb
+    a_term = d_pol * c.n_hier * c.n_phi
+
+    k_island = c.n_hier
+    n_island = (k_island * ((k_island ** d_pol) + c.d_out_e)) // c.d
+    z_island_bounds = (n_term - c.n_12, n_term - c.n_squares)
+    z_em_ceiling = (c.d_in_sq ** d_pol) + ((c.n_12 - c.d_in_v) ** d_pol)
+
+    return MPeriodicSystemStructure(
+        subshell_capacities=caps,
+        period_lengths=p_lengths,
+        noble_gas_closures=nobles,
+        nuclear_magic_low=magic_low,
+        nuclear_magic_high=magic_high,
+        nuclear_magic_all=magic_low + magic_high,
+        terminal_stable_z=z_term,
+        terminal_stable_n=n_term,
+        terminal_stable_a=a_term,
+        island_of_stability_n=n_island,
+        island_of_stability_z_bounds=z_island_bounds,
+        electromagnetic_ceiling_z=z_em_ceiling,
+    )
+
+
