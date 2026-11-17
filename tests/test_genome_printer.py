@@ -405,6 +405,63 @@ def test_m_chemistry_and_t_projector() -> None:
         float(M_CARRIER.d),
         M_CARRIER.s_0,
     )
+    assert math.isclose(
+        ak.peroxide_disproportionation_gas_quanta_esoft,
+        float(M_CARRIER.d_out_e),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.peroxide_minus_water_vap_quanta_esoft,
+        M_CARRIER.s_0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.peroxide_disproportionation_liq_quanta_esoft,
+        float(M_CARRIER.mod_bits) / float(d_pol),
+        abs_tol=1e-12,
+    )
+    assert ak.phase_regimes_count == M_CARRIER.d_in_sq
+    assert math.isclose(
+        ak.richards_fusion_jump_iso_and_k4[0],
+        float(M_CARRIER.mod_bits) / float(M_CARRIER.d_out_v),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.richards_fusion_jump_iso_and_k4[1],
+        float(d_pol * M_CARRIER.mod_bits) / float(M_CARRIER.d_out_v),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.trouton_vaporization_jump_iso_and_assoc[0],
+        float(M_CARRIER.n_classes_21) / float(d_pol),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.trouton_vaporization_jump_iso_and_assoc[1],
+        float(M_CARRIER.d ** M_CARRIER.d) / float(d_pol),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.guldberg_boil_over_crit_ratio,
+        float(M_CARRIER.d_in_sq * M_CARRIER.n_hier - M_CARRIER.d_in_v)
+        / float(d_pol * (M_CARRIER.d ** M_CARRIER.d)),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.critical_compressibility_ladder[0],
+        float(M_CARRIER.d) / float(M_CARRIER.n_hier),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.critical_compressibility_ladder[1],
+        float(M_CARRIER.d_out_v) / float(d_pol * M_CARRIER.n_12),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.critical_compressibility_ladder[2],
+        float(M_CARRIER.d) / float(M_CARRIER.n_phi),
+        abs_tol=1e-12,
+    )
     assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
     assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
 

@@ -589,6 +589,14 @@ class MAllometryAtpAndKineticsInvariants:
     elementary_reaction_mechanisms_count: int  # d_in(sq) = 4 channels (V: K_2 radical/redox, E: K_3 SN2/proton, triangle: K_4 tetrahedral, square: pericyclic)
     burgi_dunitz_attack_angle_rad: float  # arccos(-1/d) = arccos(-1/3) ~ 1.910633 rad (109.47 deg tetrahedral K_4 attack on trigonal K_3)
     catalytic_barrier_ladder_in_esoft: tuple[float, float, float, float]  # (8.0, 5.0, 3.0, 0.5) E_soft^(m) via 8 = 3 (triad) + 2 (hole/Walker) + 3 (metal/ATP)
+    peroxide_disproportionation_gas_quanta_esoft: float  # d_out(E) = 5.0 E_soft^(m) (~104.19 kJ/mol at m=0 vs 105.52 NIST)
+    peroxide_minus_water_vap_quanta_esoft: float  # d_out(E)/2 - (d-1) = 2.5 - 2.0 = s_0 = 0.5 E_soft^(m) (~10.42 kJ/mol solvation shift)
+    peroxide_disproportionation_liq_quanta_esoft: float  # mod_bits / 2 = 9 / 2 = 4.5 E_soft^(m) (~93.77 kJ/mol at m=0 vs 98.05 NIST)
+    phase_regimes_count: int  # d_in(sq) = 4 regimes on C_13 (I: locked lattice, II: percolating cluster, III: ballistic gas, IV: ionized S_1)
+    richards_fusion_jump_iso_and_k4: tuple[float, float]  # (mod_bits / d_out(V), (d-1)*mod_bits / d_out(V)) = (9/7, 18/7)
+    trouton_vaporization_jump_iso_and_assoc: tuple[float, float]  # (d^3 / 2 - d, d^3 / 2) = (21/2, 27/2) = (10.5, 13.5)
+    guldberg_boil_over_crit_ratio: float  # (4/27) / (8/31) = 31 / 54 ~ 0.574074
+    critical_compressibility_ladder: tuple[float, float, float]  # (d / N_hier, d_out(V) / (2 * |N_12|), d / N_phi) = (3/8, 7/24, 3/13)
     neutral_ph_invariant: int  # d_out(V) = 7
     water_pkw_invariant: int  # 2 * d_out(V) = 14
 
@@ -596,7 +604,7 @@ class MAllometryAtpAndKineticsInvariants:
 def m_compute_allometry_atp_and_kinetics_invariants(
     c: MCarrierConstants = M_CARRIER,
 ) -> MAllometryAtpAndKineticsInvariants:
-    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, photosynthesis windows, and O(1) catalytic barrier step-down."""
+    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, photosynthesis windows, O(1) catalytic barrier step-down, and phase-transition invariants."""
     d_pol = c.d - c.d_in_v  # 2
     t_over_t_soft = float(c.n_12 - d_pol) / float(c.d ** c.d_in_sq)  # 10 / 81
     soft_multipliers = (
@@ -616,6 +624,23 @@ def m_compute_allometry_atp_and_kinetics_invariants(
         float(c.n_hier - c.d - d_pol),
         c.s_0,
     )  # (8.0, 5.0, 3.0, 0.5)
+    perox_gas_q = float(c.d_out_e)  # 5.0
+    perox_vap_diff_q = float(c.d_out_e) * c.s_0 - float(d_pol)  # 2.5 - 2.0 = 0.5
+    perox_liq_q = perox_gas_q - perox_vap_diff_q  # 4.5 = mod_bits / 2
+    richards_pair = (
+        float(c.mod_bits) / float(c.d_out_v),
+        float(d_pol * c.mod_bits) / float(c.d_out_v),
+    )  # (9/7, 18/7)
+    trouton_assoc = float(c.d ** c.d) / float(d_pol)  # 27 / 2 = 13.5
+    trouton_pair = (trouton_assoc - float(c.d), trouton_assoc)  # (21/2, 27/2) = (10.5, 13.5)
+    theta_boil = float(c.n_12) / float(c.d ** c.d_in_sq)  # 12 / 81 = 4 / 27
+    theta_crit = float(c.n_hier) / float(c.d_in_sq * c.n_hier - c.d_in_v)  # 8 / 31
+    guldberg_ratio = theta_boil / theta_crit  # 31 / 54
+    z_crit_ladder = (
+        float(c.d) / float(c.n_hier),
+        float(c.d_out_v) / float(d_pol * c.n_12),
+        float(c.d) / float(c.n_phi),
+    )  # (3/8, 7/24, 3/13)
 
     return MAllometryAtpAndKineticsInvariants(
         kleiber_metabolic_exponent=float(c.d) / float(c.d_in_sq),
@@ -637,6 +662,14 @@ def m_compute_allometry_atp_and_kinetics_invariants(
         elementary_reaction_mechanisms_count=c.d_in_sq,
         burgi_dunitz_attack_angle_rad=burgi_dunitz_rad,
         catalytic_barrier_ladder_in_esoft=cat_ladder,
+        peroxide_disproportionation_gas_quanta_esoft=perox_gas_q,
+        peroxide_minus_water_vap_quanta_esoft=perox_vap_diff_q,
+        peroxide_disproportionation_liq_quanta_esoft=perox_liq_q,
+        phase_regimes_count=c.d_in_sq,
+        richards_fusion_jump_iso_and_k4=richards_pair,
+        trouton_vaporization_jump_iso_and_assoc=trouton_pair,
+        guldberg_boil_over_crit_ratio=guldberg_ratio,
+        critical_compressibility_ladder=z_crit_ladder,
         neutral_ph_invariant=c.d_out_v,
         water_pkw_invariant=d_pol * c.d_out_v,
     )
