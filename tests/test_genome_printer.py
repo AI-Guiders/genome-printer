@@ -12,6 +12,8 @@ from genome_printer import (
     K4_TETRAHEDRAL_SLOTS,
     fcc_shell_count,
     fcc_ball_count,
+    fcc_inter_shell_edge_count,
+    fcc_same_shell_edge_count,
     m_step_g_reversible,
     m_step_g_reverse,
     m_cuboctahedral_subshells,
@@ -25,6 +27,7 @@ from genome_printer import (
     m_compute_life_thermal_windows,
     m_compute_electron_cluster_structure,
     m_compute_periodic_and_nuclear_shells,
+    m_solve_fcc_graph_dirac_spectrum,
     M_FRONTAL_TRACKS,
     M_MAJOR_GROOVE_SLOTS,
     M_RUMER_OCTET_I_STEMS,
@@ -251,6 +254,49 @@ def test_m_chemistry_and_t_projector() -> None:
     assert per.electromagnetic_ceiling_z == (
         (M_CARRIER.d_in_sq ** d_pol) + ((M_CARRIER.n_12 - M_CARRIER.d_in_v) ** d_pol)
     )
+    assert per.fission_ceiling_z == per.terminal_stable_n
+    assert per.period_8_remaining_count == per.electromagnetic_ceiling_z - per.noble_gas_closures[-1]
+    assert per.period_8_remaining_count == M_CARRIER.n_phi + M_CARRIER.n_squares
+    assert per.period_8_remaining_count == M_CARRIER.n_12 + M_CARRIER.d_out_v
+    assert sum(per.period_8_channel_partition) == per.period_8_remaining_count
+    assert per.period_8_channel_partition == (
+        per.subshell_capacities[0],
+        per.subshell_capacities[-1],
+        M_CARRIER.d,
+    )
+    assert per.finite_nucleus_qed_diving_z_bounds == (
+        per.electromagnetic_ceiling_z + M_CARRIER.d_out_e * M_CARRIER.d_out_v,
+        per.electromagnetic_ceiling_z + (M_CARRIER.n_squares ** d_pol),
+    )
+
+    # Discrete Gauss theorem on FCC N12 coordination spheres:
+    # E_in(k) + E_same(k) + E_out(k) == |N_12| * N_shell(k) for all k >= 1
+    for k_sh in range(M_CARRIER.d_in_v, M_CARRIER.n_hier):
+        e_in = fcc_inter_shell_edge_count(k_sh)
+        e_same = fcc_same_shell_edge_count(k_sh)
+        e_out = fcc_inter_shell_edge_count(k_sh + M_CARRIER.d_in_v)
+        assert e_in + e_same + e_out == M_CARRIER.n_12 * fcc_shell_count(k_sh)
+
+    # Discrete M-layer Graph Dirac operator on FCC N12 coordination spheres (zero continuum, zero pi)
+    dirac = m_solve_fcc_graph_dirac_spectrum()
+    assert dirac.core_step_jump == M_CARRIER.d
+    assert math.isclose(
+        dirac.green_core_k0 - dirac.green_shell_k1,
+        float(M_CARRIER.d),
+        abs_tol=1e-12,
+    )
+    assert dirac.z_core_zero_crossing == per.terminal_stable_z - M_CARRIER.d_in_v
+    assert dirac.e_core_at_lead_82 < 0.0
+    assert (
+        per.island_of_stability_z_bounds[1]
+        < dirac.z_core_continuum_diving
+        < per.fission_ceiling_z
+    )
+    assert dirac.e_core_before_diving_122 > -1.0
+    # At Z = 137 (Feynman point-limit), the 1s shell mode on k=1 is completely real and positive (> 0.6)
+    assert dirac.e_1s_shell_at_137 > 0.5
+    assert dirac.e_1s_hard_core_at_137 > 0.5
+    assert dirac.z_1s_hard_core_zero_crossing > d_pol * per.fission_ceiling_z
 
 
 

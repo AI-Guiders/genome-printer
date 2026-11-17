@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from .m_carrier import M_CARRIER, MCarrierConstants
+from .m_carrier import (
+    M_CARRIER,
+    MCarrierConstants,
+    fcc_shell_count,
+    fcc_inter_shell_edge_count,
+    fcc_same_shell_edge_count,
+)
 
 
 @dataclass(frozen=True)
@@ -246,13 +252,17 @@ class MPeriodicSystemStructure:
     terminal_stable_a: int  # 2 * N_hier * N_phi = 208 (Pb-208)
     island_of_stability_n: int  # M_high(N_hier = 8) = 184
     island_of_stability_z_bounds: tuple[int, int]  # (126 - |N_12| = 114, 126 - |square| = 120)
-    electromagnetic_ceiling_z: int  # d_in(sq)^2 + (|N_12| - 1)^2 = 137
+    fission_ceiling_z: int  # 2 * N_HB = 126 (unperturbed proton closure / spontaneous fission limit)
+    electromagnetic_ceiling_z: int  # d_in(sq)^2 + (|N_12| - 1)^2 = 137 (point-nucleus Dirac limit)
+    period_8_remaining_count: int  # 137 - 118 = 19 = N_phi + |square|
+    period_8_channel_partition: tuple[int, int, int]  # (2, 14, 3) = (C_0(V), C_3(triangle), d(square))
+    finite_nucleus_qed_diving_z_bounds: tuple[int, int]  # (137 + d_out(E)*d_out(V) = 172, 137 + |square|^2 = 173)
 
 
 def m_compute_periodic_and_nuclear_shells(
     c: MCarrierConstants = M_CARRIER,
 ) -> MPeriodicSystemStructure:
-    """Derive electronic periods, nuclear magic shells, Pb-208 terminal closure, N=184 island, and Z_max=137."""
+    """Derive electronic periods, nuclear magic shells, Pb-208 terminal closure, N=184 island, and Z_max limits."""
     d_pol = c.d - c.d_in_v
     subshells = m_cuboctahedral_subshells(c=c)
     caps = tuple(ch.spin_capacity for ch in subshells)
@@ -277,7 +287,14 @@ def m_compute_periodic_and_nuclear_shells(
     k_island = c.n_hier
     n_island = (k_island * ((k_island ** d_pol) + c.d_out_e)) // c.d
     z_island_bounds = (n_term - c.n_12, n_term - c.n_squares)
+    z_fission = n_term
     z_em_ceiling = (c.d_in_sq ** d_pol) + ((c.n_12 - c.d_in_v) ** d_pol)
+    p8_partition = (caps[0], caps[-1], c.d)
+    p8_remaining = z_em_ceiling - nobles[-1]
+    z_qed_diving = (
+        z_em_ceiling + c.d_out_e * c.d_out_v,
+        z_em_ceiling + (c.n_squares ** d_pol),
+    )
 
     return MPeriodicSystemStructure(
         subshell_capacities=caps,
@@ -291,7 +308,143 @@ def m_compute_periodic_and_nuclear_shells(
         terminal_stable_a=a_term,
         island_of_stability_n=n_island,
         island_of_stability_z_bounds=z_island_bounds,
+        fission_ceiling_z=z_fission,
         electromagnetic_ceiling_z=z_em_ceiling,
+        period_8_remaining_count=p8_remaining,
+        period_8_channel_partition=p8_partition,
+        finite_nucleus_qed_diving_z_bounds=z_qed_diving,
+    )
+
+
+@dataclass(frozen=True)
+class MFccGraphDiracSpectrum:
+    """Discrete M-layer Dirac spectrum on coordination spheres S_k of FCC N12 (zero continuum, zero pi)."""
+
+    green_core_k0: float  # G_FCC(0) = d + G_FCC(1) ~ 3.9158425 (finite!)
+    green_shell_k1: float  # G_FCC(1) = sum_{m>=2} d / (m^d - (m-1)^d) ~ 0.9158425
+    core_step_jump: int  # G_FCC(0) - G_FCC(1) = d = 3
+    z_core_zero_crossing: int  # Z where k=0 core mode crosses E = 0 (Z = 81, at Pb-208 boundary Z = 82 E < 0)
+    e_core_at_lead_82: float  # E_core(Z = 82) < 0
+    z_core_continuum_diving: int  # Z where k=0 core mode dives below E = -1 (Z = 123, after Z = 122)
+    e_core_before_diving_122: float  # E_core(Z = 122) ~ -0.9923 > -1
+    e_1s_shell_at_137: float  # E_1s(Z = 137) ~ +0.6331 > 0 (nonsingular!)
+    e_1s_hard_core_at_137: float  # E_1s(Z = 137, k >= 1) ~ +0.6529 > 0
+    z_1s_hard_core_zero_crossing: int  # Z where hard-core k >= 1 1s shell mode crosses E = 0 (Z = 270)
+
+
+def m_fcc_harmonic_green_function(
+    k_max: int,
+    c: MCarrierConstants = M_CARRIER,
+) -> tuple[float, ...]:
+    """Compute exact discrete harmonic potential G_FCC(k) on coordination spheres S_k from discrete Gauss law."""
+    tail_m = c.n_ring * c.d_in_sq  # 2048 shells
+    # Backward cumulative sum of d / (m^d - (m - 1)^d)
+    acc = 0.0
+    vals = [0.0] * (tail_m + 1)
+    for m in range(tail_m, 0, -1):
+        step_edges_over_n12 = (m ** c.d) - ((m - c.d_in_v) ** c.d)
+        acc += float(c.d) / float(step_edges_over_n12)
+        vals[m - 1] = acc
+    return tuple(vals[: k_max + 1])
+
+
+def m_solve_fcc_graph_dirac_spectrum(
+    c: MCarrierConstants = M_CARRIER,
+) -> MFccGraphDiracSpectrum:
+    """Solve the discrete M-layer Dirac operator on FCC N12 coordination spheres S_k via Sturm recurrence."""
+    d_pol = c.d - c.d_in_v
+    k_max = c.m_hat + c.d  # 100 coordination spheres
+    n_sh = tuple(fcc_shell_count(k) for k in range(k_max + 1))
+    g_fcc = m_fcc_harmonic_green_function(k_max=k_max, c=c)
+
+    geom_norm = float(c.n_12 - d_pol) / float(c.d)
+    a_hop = [0.0] * (k_max + 1)
+    b_hop = [0.0] * (k_max + 1)
+    for k in range(c.d_in_v, k_max + 1):
+        ew = float(fcc_inter_shell_edge_count(k)) / float(c.n_12)
+        a_hop[k] = math.sqrt(geom_norm * ew / float(n_sh[k - 1]))
+        b_hop[k] = math.sqrt(geom_norm * ew / float(n_sh[k]))
+
+    alpha = c.alpha_fs
+
+    def count_below(z: int, energy: float, start_k: int) -> int:
+        neg_pivots = 0
+        prev_pivot = 0.0
+        for k in range(start_k, k_max + 1):
+            v_node = -float(z) * alpha * g_fcc[k]
+            diag = 1.0 + v_node - energy
+            if k >= c.d_in_v:
+                v_edge_in = -float(z) * alpha * (
+                    0.5 * (g_fcc[k - 1] + g_fcc[k]) if start_k == 0 else g_fcc[k]
+                )
+                denom_in = 1.0 + energy - v_edge_in
+                diag += (b_hop[k] ** d_pol) / denom_in
+                if k > start_k:
+                    off_sq = ((a_hop[k] * b_hop[k]) / denom_in) ** d_pol
+                    pivot = diag - off_sq / prev_pivot
+                else:
+                    pivot = diag
+            else:
+                pivot = diag
+            if k < k_max:
+                v_edge_out = -float(z) * alpha * (
+                    0.5 * (g_fcc[k] + g_fcc[k + 1]) if start_k == 0 else g_fcc[k + 1]
+                )
+                denom_out = 1.0 + energy - v_edge_out
+                pivot += (a_hop[k + 1] ** d_pol) / denom_out
+            if pivot < 0.0:
+                neg_pivots += 1
+            prev_pivot = pivot if abs(pivot) > 1e-30 else 1e-30
+        return neg_pivots
+
+    def bisect_eval(z: int, target_idx: int, start_k: int) -> float:
+        lo, hi = -0.9999999, 0.9999999
+        if count_below(z, lo, start_k) > target_idx:
+            return -1.0
+        n_iter = c.n_shell_2 + c.n_12  # 54 binary-search steps
+        for _ in range(n_iter):
+            mid = 0.5 * (lo + hi)
+            if count_below(z, mid, start_k) > target_idx:
+                hi = mid
+            else:
+                lo = mid
+        return 0.5 * (lo + hi)
+
+    z_lead = d_pol * c.delta_phi_disc  # 82
+    z_feynman = (c.d_in_sq ** d_pol) + ((c.n_12 - c.d_in_v) ** d_pol)  # 137
+
+    # Find first Z where k=0 core mode crosses E = 0
+    z_core_zero = z_lead
+    for z_cand in range(z_lead - c.n_hier, z_lead + c.n_hier):
+        if count_below(z_cand, 0.0, 0) >= c.d_in_v:
+            z_core_zero = z_cand
+            break
+
+    # Find first Z where k=0 core mode dives below E = -1
+    z_core_dive = d_pol * c.n_hb
+    for z_cand in range(d_pol * c.n_hb - c.n_hier, d_pol * c.n_hb + c.n_hier):
+        if count_below(z_cand, -0.9999999, 0) >= c.d_in_v:
+            z_core_dive = z_cand
+            break
+
+    # Find first Z where hard-core k >= 1 1s shell mode crosses E = 0
+    z_1s_zero = d_pol * z_feynman
+    for z_cand in range(d_pol * z_feynman - c.n_12, d_pol * z_feynman + c.n_12):
+        if count_below(z_cand, 0.0, c.d_in_v) >= c.d_in_v:
+            z_1s_zero = z_cand
+            break
+
+    return MFccGraphDiracSpectrum(
+        green_core_k0=g_fcc[0],
+        green_shell_k1=g_fcc[1],
+        core_step_jump=round(g_fcc[0] - g_fcc[1]),
+        z_core_zero_crossing=z_core_zero,
+        e_core_at_lead_82=bisect_eval(z_lead, 0, 0),
+        z_core_continuum_diving=z_core_dive,
+        e_core_before_diving_122=bisect_eval(z_core_dive - c.d_in_v, 0, 0),
+        e_1s_shell_at_137=bisect_eval(z_feynman, c.d_in_v, 0),
+        e_1s_hard_core_at_137=bisect_eval(z_feynman, 0, c.d_in_v),
+        z_1s_hard_core_zero_crossing=z_1s_zero,
     )
 
 

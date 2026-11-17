@@ -70,6 +70,20 @@ def fcc_ball_count(k: int) -> int:
     return sum(fcc_shell_count(m) for m in range(k + 1))
 
 
+def fcc_inter_shell_edge_count(k: int) -> int:
+    """Discrete Gauss theorem on FCC N12: edges E(k-1 <-> k) = 12 * (k^3 - (k-1)^3) for k >= 1."""
+    if k <= 0:
+        return 0
+    return 12 * ((k ** 3) - ((k - 1) ** 3))
+
+
+def fcc_same_shell_edge_count(k: int) -> int:
+    """Tangential edges within coordination sphere S_k on FCC N12: E(k <-> k) = 48 * k^2 for k >= 1."""
+    if k <= 0:
+        return 0
+    return 48 * (k * k)
+
+
 @dataclass(frozen=True)
 class MCarrierConstants:
     """Pure M-layer native generalized coordinates (dh, dt, s_0) and closed k=0..13 scale ladder."""

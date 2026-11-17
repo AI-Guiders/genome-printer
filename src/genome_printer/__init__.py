@@ -19,6 +19,8 @@ from .m_carrier import (
     M_CARRIER,
     fcc_shell_count,
     fcc_ball_count,
+    fcc_inter_shell_edge_count,
+    fcc_same_shell_edge_count,
     m_signed_from_mod,
     m_mod_lane,
     m_fcc_neighbor_sum_int,
@@ -32,6 +34,7 @@ from .m_chemistry import (
     MThermalMobilityWindow,
     MElectronClusterStructure,
     MPeriodicSystemStructure,
+    MFccGraphDiracSpectrum,
     m_cuboctahedral_subshells,
     m_ionization_ratio_be_h,
     m_ionization_energy_e0,
@@ -44,6 +47,8 @@ from .m_chemistry import (
     m_compute_life_thermal_windows,
     m_compute_electron_cluster_structure,
     m_compute_periodic_and_nuclear_shells,
+    m_fcc_harmonic_green_function,
+    m_solve_fcc_graph_dirac_spectrum,
 )
 from .m_nucleic import (
     M_FRONTAL_TRACKS,
