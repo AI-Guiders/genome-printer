@@ -434,7 +434,8 @@ def test_m_chemistry_and_t_projector() -> None:
     )
     assert lg.caspar_klug_skew_t7_capsomers == M_CARRIER.n_squares * M_CARRIER.n_12
     assert lg.microtubule_protofilaments == M_CARRIER.n_phi
-    assert lg.kinesin_step_dimer_in_kappa_a0 == M_CARRIER.n_classes_21
+    assert lg.tubulin_monomer_in_kappa_a0 == M_CARRIER.d_out_e * M_CARRIER.n_classes_21
+    assert lg.kinesin_step_dimer_in_kappa_a0 == (M_CARRIER.n_12 - d_pol) * M_CARRIER.n_classes_21
 
 
 

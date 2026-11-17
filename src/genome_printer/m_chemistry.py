@@ -679,8 +679,8 @@ class MLocalGatesSolidStateNeuroAndPhotoInvariants:
     caspar_klug_skew_t7_capsomers: int  # 10 * d_out(V) + 2 = 72 = |square| * |N_12|
     microtubule_protofilaments: int  # N_phi = 13
     microtubule_seam_monomer_shift: int  # d = 3
-    tubulin_monomer_in_kappa_a0: float  # N_classes * s_0 = 10.5 (~3.929 nm)
-    kinesin_step_dimer_in_kappa_a0: int  # N_classes = 21 (~7.858 nm)
+    tubulin_monomer_in_kappa_a0: int  # d_out(E) * N_classes = 5 * 21 = 105 (~39.29 A = 3.929 nm)
+    kinesin_step_dimer_in_kappa_a0: int  # (|N_12| - 2) * N_classes = 10 * 21 = 210 (~78.58 A = 7.858 nm)
 
 
 def m_compute_local_gates_solid_neuro_photo_invariants(
@@ -795,8 +795,8 @@ def m_compute_local_gates_solid_neuro_photo_invariants(
         caspar_klug_skew_t7_capsomers=ck_t7_capsomers,
         microtubule_protofilaments=c.n_phi,
         microtubule_seam_monomer_shift=c.d,
-        tubulin_monomer_in_kappa_a0=float(c.n_classes_21) * c.s_0,
-        kinesin_step_dimer_in_kappa_a0=c.n_classes_21,
+        tubulin_monomer_in_kappa_a0=c.d_out_e * c.n_classes_21,
+        kinesin_step_dimer_in_kappa_a0=shell_coeff * c.n_classes_21,
     )
 
 
