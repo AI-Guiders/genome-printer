@@ -400,7 +400,9 @@ def test_m_chemistry_and_t_projector() -> None:
     assert lg.info_equiv_octahedral_group_order == d_pol * d_pol * M_CARRIER.n_12
     assert lg.info_equiv_spherical_channels_count == M_CARRIER.d_in_sq
     assert lg.info_equiv_macro_cell_bits_per_tick == M_CARRIER.d_in_sq * M_CARRIER.mod_bits
-    assert lg.info_equiv_macro_cell_bits_two_tick == d_pol * lg.info_equiv_macro_cell_bits_per_tick
+    assert lg.info_equiv_macro_cell_bits_per_tick == M_CARRIER.n_squares * M_CARRIER.n_squares
+    assert lg.info_equiv_macro_cell_bits_per_tick == M_CARRIER.d * M_CARRIER.n_12
+    assert lg.info_equiv_macro_cell_bits_two_tick == M_CARRIER.n_squares * M_CARRIER.n_12
     assert math.isclose(
         lg.cauchy_poisson_ratio,
         float(M_CARRIER.d_in_v) / float(M_CARRIER.d_in_sq),
