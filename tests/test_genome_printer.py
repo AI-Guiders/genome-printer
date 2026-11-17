@@ -28,6 +28,7 @@ from genome_printer import (
     m_compute_electron_cluster_structure,
     m_compute_periodic_and_nuclear_shells,
     m_solve_fcc_graph_dirac_spectrum,
+    m_compute_cuboctahedral_aperture_and_gas_invariants,
     M_FRONTAL_TRACKS,
     M_MAJOR_GROOVE_SLOTS,
     M_RUMER_OCTET_I_STEMS,
@@ -297,6 +298,45 @@ def test_m_chemistry_and_t_projector() -> None:
     assert dirac.e_1s_shell_at_137 > 0.5
     assert dirac.e_1s_hard_core_at_137 > 0.5
     assert dirac.z_1s_hard_core_zero_crossing > d_pol * per.fission_ceiling_z
+
+    # 4-channel nilpotent cascade M_chan = I_4 + N_nil (N_nil^3 == 0) and gas-dynamics invariants
+    ap = m_compute_cuboctahedral_aperture_and_gas_invariants()
+    assert ap.cascade_determinant == d_pol * M_CARRIER.n_12
+    assert ap.cascade_inverse_diag_24 == (
+        d_pol * M_CARRIER.n_12,
+        M_CARRIER.n_12,
+        M_CARRIER.n_squares,
+        M_CARRIER.n_hier,
+    )
+    assert ap.nilpotent_index == M_CARRIER.d
+    assert math.isclose(
+        ap.two_step_vortex_amplitude,
+        float(d_pol) / float(M_CARRIER.d),
+        abs_tol=1e-12,
+    )
+    assert sum(ap.forward_shell_channels_k) == fcc_shell_count(M_CARRIER.n_hier + M_CARRIER.d_in_v)
+    assert ap.reconstructed_source_s1 == (M_CARRIER.n_12, 0, 0, 0)
+    assert math.isclose(
+        ap.prandtl_numbers[0],
+        float(d_pol) / float(M_CARRIER.d),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ap.prandtl_numbers[1],
+        float(d_pol * M_CARRIER.d_out_v) / float(M_CARRIER.n_phi + M_CARRIER.n_squares),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ap.prandtl_numbers[2],
+        float(d_pol * M_CARRIER.n_hier) / float(M_CARRIER.n_classes_21),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(ap.critical_mach_number, 1.0 / M_CARRIER.kappa, abs_tol=1e-12)
+    assert math.isclose(
+        ap.viscosity_entropy_floor,
+        float(M_CARRIER.delta_phi_disc) / float(M_CARRIER.n_ring),
+        abs_tol=1e-12,
+    )
 
 
 

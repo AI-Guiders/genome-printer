@@ -35,6 +35,7 @@ from .m_chemistry import (
     MElectronClusterStructure,
     MPeriodicSystemStructure,
     MFccGraphDiracSpectrum,
+    MCuboctahedralApertureAndGasDynamics,
     m_cuboctahedral_subshells,
     m_ionization_ratio_be_h,
     m_ionization_energy_e0,
@@ -49,6 +50,7 @@ from .m_chemistry import (
     m_compute_periodic_and_nuclear_shells,
     m_fcc_harmonic_green_function,
     m_solve_fcc_graph_dirac_spectrum,
+    m_compute_cuboctahedral_aperture_and_gas_invariants,
 )
 from .m_nucleic import (
     M_FRONTAL_TRACKS,

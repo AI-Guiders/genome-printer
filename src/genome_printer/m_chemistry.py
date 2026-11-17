@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from .m_carrier import (
+    FCC_N12_VECTORS,
     M_CARRIER,
     MCarrierConstants,
     fcc_shell_count,
@@ -445,6 +446,107 @@ def m_solve_fcc_graph_dirac_spectrum(
         e_1s_shell_at_137=bisect_eval(z_feynman, c.d_in_v, 0),
         e_1s_hard_core_at_137=bisect_eval(z_feynman, 0, c.d_in_v),
         z_1s_hard_core_zero_crossing=z_1s_zero,
+    )
+
+
+@dataclass(frozen=True)
+class MCuboctahedralApertureAndGasDynamics:
+    """Dimensionless M-layer 4-channel nilpotent cascade M_chan and gas-dynamics invariants."""
+
+    cascade_determinant: int  # det(T_cascade) = 1 * 2 * 4 * 3 = 24 = 2 * |N_12|
+    cascade_inverse_diag_24: tuple[int, int, int, int]  # (24, 12, 6, 8) = (|E|, |V|, |square|, |triangle|)
+    channel_retention_ticks: tuple[int, int, int, int]  # ceil((12 / d_out) * (256 / 41)) = (11, 15, 19, 25)
+    nilpotent_index: int  # d = 3 (N_nil^3 == 0)
+    two_step_vortex_amplitude: float  # (N_nil^2)_{V -> triangle} = 2 * (1/3) = 2/3 = (d - 1) / d
+    forward_shell_channels_k: tuple[int, int, int, int]  # n_k = n_1 * M_chan^(k-1) at m = N_hier = 8
+    reconstructed_source_s1: tuple[int, int, int, int]  # exact n_1 = n_k * M_chan^(-(k-1)) = (12, 0, 0, 0)
+    adiabatic_indices: tuple[float, float, float, float]  # (5/3, 7/5, 4/3, 9/7)
+    prandtl_numbers: tuple[float, float, float]  # (2/3, 14/19, 16/21)
+    critical_mach_number: float  # 1 / kappa = sqrt(2)
+    kolmogorov_exponents: tuple[float, float]  # (2/3, -5/3)
+    viscosity_entropy_floor: float  # Delta_phi_disc / N_ring = 41 / 512
+
+
+def m_compute_cuboctahedral_aperture_and_gas_invariants(
+    c: MCarrierConstants = M_CARRIER,
+) -> MCuboctahedralApertureAndGasDynamics:
+    """Derive the 4-channel nilpotent cascade M_chan (N_nil^3 == 0), exact inverse M_chan^(-m), and gas-dynamics ratios."""
+    d_pol = c.d - c.d_in_v
+
+    # 1. 4-channel cascade matrix T_cascade on (V, E, square, triangle)
+    d_in_vec = (c.d_in_v, c.d_in_e, c.d_in_sq, c.d_in_tri)  # (1, 2, 4, 3)
+    d_out_vec = (c.d_out_v, c.d_out_e, c.d_out_sq, c.d_out_tri)  # (7, 5, 4, 3)
+    det_t = 1
+    for val in d_in_vec:
+        det_t *= val  # 24
+    inv_diag_24 = tuple(det_t // val for val in d_in_vec)  # (24, 12, 6, 8)
+    retention_ticks = tuple(
+        math.ceil((float(c.n_12) / float(d_out)) * (float(c.phi_pauli) / float(c.delta_phi_disc)))
+        for d_out in d_out_vec
+    )  # (11, 15, 19, 25)
+
+    # Nilpotent inter-channel generator N_nil = M_chan - I_4:
+    # Row 0 (V): N_{0,1} = 4/2 = 2, N_{0,2} = 2/4 = 1/2
+    # Row 1 (E): N_{1,2} = 2/4 = 1/2, N_{1,3} = 1/3
+    n_01 = float(c.d_in_sq) / float(c.d_in_e)  # 2.0
+    n_02 = float(c.d_in_e) / float(c.d_in_sq)  # 0.5
+    n_12 = float(c.d_in_e) / float(c.d_in_sq)  # 0.5
+    n_13 = float(c.d_in_v) / float(c.d_in_tri)  # 1/3
+    # (N_nil^2)_{0,2} = n_01 * n_12 = 1.0, (N_nil^2)_{0,3} = n_01 * n_13 = 2/3
+    n2_02 = n_01 * n_12
+    n2_03 = n_01 * n_13
+
+    # Forward propagation n_k = n_1 * (I_4 + m * N_nil + (m*(m-1)/2) * N_nil^2) for m = k - 1 = n_hier = 8:
+    # Note that entry (0, 2) of M_chan^(+m) is m * n_02 + (m*(m-1)/2) * n2_02 = m/2 + m*(m-1)/2 = m^2 / 2!
+    m_step = c.n_hier
+    binom_m_minus_1 = float(m_step * (m_step - c.d_in_v)) / float(d_pol)
+    fwd_v = float(c.n_12)
+    fwd_e = float(c.n_12) * (float(m_step) * n_01)
+    fwd_sq = float(c.n_12) * (float(m_step) * n_02 + binom_m_minus_1 * n2_02)
+    fwd_tri = float(c.n_12) * (binom_m_minus_1 * n2_03)
+    n_k_vec = (fwd_v, fwd_e, fwd_sq, fwd_tri)
+    forward_channels_int = (round(fwd_v), round(fwd_e), round(fwd_sq), round(fwd_tri))
+
+    # Exact reconstruction of sphere k=1 source n_1 = (12, 0, 0, 0) from n_k_vec
+    # via M_chan^(-m) = I_4 - m * N_nil + (m*(m+1)/2) * N_nil^2:
+    binom_m_plus_1 = float(m_step * (m_step + c.d_in_v)) / float(d_pol)
+    rec_v = n_k_vec[0]
+    rec_e = n_k_vec[0] * (-float(m_step) * n_01) + n_k_vec[1]
+    rec_sq = (
+        n_k_vec[0] * (-float(m_step) * n_02 + binom_m_plus_1 * n2_02)
+        + n_k_vec[1] * (-float(m_step) * n_12)
+        + n_k_vec[2]
+    )
+    rec_tri = (
+        n_k_vec[0] * (binom_m_plus_1 * n2_03)
+        + n_k_vec[1] * (-float(m_step) * n_13)
+        + n_k_vec[3]
+    )
+    reconstructed_s1 = (round(rec_v), round(rec_e), round(rec_sq), round(rec_tri))
+
+    dof_classes = (c.d, c.d_out_e, c.n_squares, c.d_out_v)
+    gammas = tuple(float(f + d_pol) / float(f) for f in dof_classes)
+    prandtls = tuple(
+        (float(c.d_in_sq) * g) / (float(c.mod_bits) * g - float(c.d_out_e))
+        for g in gammas[: c.d]
+    )
+
+    return MCuboctahedralApertureAndGasDynamics(
+        cascade_determinant=det_t,
+        cascade_inverse_diag_24=inv_diag_24,
+        channel_retention_ticks=retention_ticks,
+        nilpotent_index=c.d,
+        two_step_vortex_amplitude=n2_03,
+        forward_shell_channels_k=forward_channels_int,
+        reconstructed_source_s1=reconstructed_s1,
+        adiabatic_indices=gammas,
+        prandtl_numbers=prandtls,
+        critical_mach_number=1.0 / c.kappa,
+        kolmogorov_exponents=(
+            float(d_pol) / float(c.d),
+            -float(c.d_out_e) / float(c.d),
+        ),
+        viscosity_entropy_floor=float(c.delta_phi_disc) / float(c.n_ring),
     )
 
 
