@@ -602,6 +602,12 @@ class MAllometryAtpAndKineticsInvariants:
     water_zc_to_omega_ratio: float  # (3/13) / (9/26) = 2 / 3 = (d - 1) / d (NIST: 0.229 / 0.344 = 0.6657)
     lee_kesler_zc_slope: float  # 1 / |N_12| = 1 / 12 ~ 0.083333 (Z_c(omega) = 7/24 - omega/12 vs Lee-Kesler 0.2905 - 0.085*omega)
     critical_exponents_3d_alpha_nu_eta_beta_gamma_delta: tuple[float, float, float, float, float, float]  # (1/9, 17/27, 2/55, 323/990, 68/55, 91/19)
+    atmospheric_blanket_slots_n2_o2_ar: tuple[int, int, int]  # (N_HB, 2*N_hier + 1, d_in(V)) = (63, 17, 1) summing to 81 = 3^4
+    atmospheric_blanket_fractions_n2_o2_ar: tuple[float, float, float]  # (63/81 = 7/9 ~ 77.78%, 17/81 ~ 20.99%, 1/81 ~ 1.23%)
+    pauli_to_heisenberg_flux_ratio: float  # Phi_Pauli / |E_Heis| = 256 / 81 = (4 / 3)^4 ~ 3.160494
+    surface_to_tropopause_temp_ratio: float  # (256 / 81)**(1/4) = d_in(sq) / d = 4 / 3 = 28 / 21
+    tropopause_t_over_t_soft: float  # d_out(V) / d^4 = 7 / 81 (~61.88 K Titan, 216.58 K Earth vs 216.65 K ISA, 433.16 K Venus)
+    surface_blanket_t_over_t_soft: float  # (4/3) * (7/81) = 28 / 243 (~82.51 K Titan, 288.77 K Earth vs 288.15 K ISA, 577.55 K Venus)
     neutral_ph_invariant: int  # d_out(V) = 7
     water_pkw_invariant: int  # 2 * d_out(V) = 14
 
@@ -609,9 +615,10 @@ class MAllometryAtpAndKineticsInvariants:
 def m_compute_allometry_atp_and_kinetics_invariants(
     c: MCarrierConstants = M_CARRIER,
 ) -> MAllometryAtpAndKineticsInvariants:
-    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, photosynthesis windows, O(1) catalytic barrier step-down, and phase-transition / 3D critical exponents."""
+    """Derive universal 3-world (m in {-1,0,+1}) Kleiber 3/4 allometry, homeostasis, macroerg bioenergetics, membrane spike, photosynthesis windows, O(1) catalytic barrier step-down, phase-transition / 3D critical exponents, and planetary atmospheric blanket invariants."""
     d_pol = c.d - c.d_in_v  # 2
-    t_over_t_soft = float(c.n_12 - d_pol) / float(c.d ** c.d_in_sq)  # 10 / 81
+    n_heis = c.d ** c.d_in_sq  # 81
+    t_over_t_soft = float(c.n_12 - d_pol) / float(n_heis)  # 10 / 81
     soft_multipliers = (
         float(d_pol) / float(c.d_out_v),
         float(c.d_in_v),
@@ -638,7 +645,7 @@ def m_compute_allometry_atp_and_kinetics_invariants(
     )  # (9/7, 18/7)
     trouton_assoc = float(c.d ** c.d) / float(d_pol)  # 27 / 2 = 13.5
     trouton_pair = (trouton_assoc - float(c.d), trouton_assoc)  # (21/2, 27/2) = (10.5, 13.5)
-    theta_boil = float(c.n_12) / float(c.d ** c.d_in_sq)  # 12 / 81 = 4 / 27
+    theta_boil = float(c.n_12) / float(n_heis)  # 12 / 81 = 4 / 27
     theta_crit = float(c.n_hier) / float(c.d_in_sq * c.n_hier - c.d_in_v)  # 8 / 31
     guldberg_ratio = theta_boil / theta_crit  # 31 / 54
     z_crit_ladder = (
@@ -658,6 +665,17 @@ def m_compute_allometry_atp_and_kinetics_invariants(
     crit_gamma = crit_nu * (float(d_pol) - crit_eta)  # (17/27)*(108/55) = 68 / 55 ~ 1.23636
     crit_delta = (float(c.d + d_pol) - crit_eta) / (float(c.d - d_pol) + crit_eta)  # 91 / 19 ~ 4.78947
     crit_exponents_3d = (crit_alpha, crit_nu, crit_eta, crit_beta, crit_gamma, crit_delta)
+    atm_slots = (c.n_hb, d_pol * c.n_hier + c.d_in_v, c.d_in_v)  # (63, 17, 1)
+    atm_fracs = (
+        float(atm_slots[0]) / float(n_heis),
+        float(atm_slots[1]) / float(n_heis),
+        float(atm_slots[2]) / float(n_heis),
+    )
+    pauli_ticks = c.n_ring // d_pol  # 256
+    flux_ratio = float(pauli_ticks) / float(n_heis)  # 256 / 81
+    surf_over_trop = float(c.d_in_sq) / float(c.d)  # 4 / 3
+    trop_over_soft = float(c.d_out_v) / float(n_heis)  # 7 / 81
+    surf_over_soft = surf_over_trop * trop_over_soft  # 28 / 243
 
     return MAllometryAtpAndKineticsInvariants(
         kleiber_metabolic_exponent=float(c.d) / float(c.d_in_sq),
@@ -692,6 +710,12 @@ def m_compute_allometry_atp_and_kinetics_invariants(
         water_zc_to_omega_ratio=zc_to_omega_h2o,
         lee_kesler_zc_slope=lk_slope,
         critical_exponents_3d_alpha_nu_eta_beta_gamma_delta=crit_exponents_3d,
+        atmospheric_blanket_slots_n2_o2_ar=atm_slots,
+        atmospheric_blanket_fractions_n2_o2_ar=atm_fracs,
+        pauli_to_heisenberg_flux_ratio=flux_ratio,
+        surface_to_tropopause_temp_ratio=surf_over_trop,
+        tropopause_t_over_t_soft=trop_over_soft,
+        surface_blanket_t_over_t_soft=surf_over_soft,
         neutral_ph_invariant=c.d_out_v,
         water_pkw_invariant=d_pol * c.d_out_v,
     )

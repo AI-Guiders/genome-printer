@@ -503,6 +503,27 @@ def test_m_chemistry_and_t_projector() -> None:
         float(M_CARRIER.d_in_sq * (d_pol * M_CARRIER.n_hier + M_CARRIER.d_in_v)) / float(n_ball_2),
         abs_tol=1e-12,
     )
+    assert ak.atmospheric_blanket_slots_n2_o2_ar == (
+        M_CARRIER.n_hb,
+        d_pol * M_CARRIER.n_hier + M_CARRIER.d_in_v,
+        M_CARRIER.d_in_v,
+    )
+    assert sum(ak.atmospheric_blanket_slots_n2_o2_ar) == (M_CARRIER.d ** M_CARRIER.d_in_sq)
+    assert math.isclose(
+        ak.pauli_to_heisenberg_flux_ratio,
+        (float(M_CARRIER.d_in_sq) / float(M_CARRIER.d)) ** M_CARRIER.d_in_sq,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.surface_to_tropopause_temp_ratio,
+        float(M_CARRIER.d_in_sq) / float(M_CARRIER.d),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        ak.surface_blanket_t_over_t_soft / ak.tropopause_t_over_t_soft,
+        ak.surface_to_tropopause_temp_ratio,
+        abs_tol=1e-12,
+    )
     assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
     assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
 
