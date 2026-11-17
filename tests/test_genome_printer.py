@@ -30,6 +30,7 @@ from genome_printer import (
     m_solve_fcc_graph_dirac_spectrum,
     m_compute_cuboctahedral_aperture_and_gas_invariants,
     m_compute_allometry_atp_and_kinetics_invariants,
+    m_compute_local_gates_solid_neuro_photo_invariants,
     M_FRONTAL_TRACKS,
     M_MAJOR_GROOVE_SLOTS,
     M_RUMER_OCTET_I_STEMS,
@@ -387,6 +388,31 @@ def test_m_chemistry_and_t_projector() -> None:
     assert math.isclose(ak.grotthuss_hop_barrier_in_ehb, M_CARRIER.s_0, abs_tol=1e-12)
     assert ak.neutral_ph_invariant == M_CARRIER.d_out_v
     assert ak.water_pkw_invariant == d_pol * M_CARRIER.d_out_v
+
+    # Local Heisenberg/Pauli gates, Cauchy solid-state, FQHE, Hodgkin-Huxley, photosynthesis, and 12=7+5 harmony
+    lg = m_compute_local_gates_solid_neuro_photo_invariants()
+    assert lg.heisenberg_deadband_states == (M_CARRIER.d ** M_CARRIER.d_in_sq)
+    assert lg.heisenberg_deadband_states + lg.heisenberg_active_ring_states == M_CARRIER.n_ring
+    assert lg.pauli_impulse_ticks == M_CARRIER.n_ring // d_pol
+    assert lg.s1_pauli_lightcone_delay_ticks == d_pol
+    assert math.isclose(
+        lg.cauchy_poisson_ratio,
+        float(M_CARRIER.d_in_v) / float(M_CARRIER.d_in_sq),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        lg.cauchy_shear_to_bulk_ratio,
+        float(M_CARRIER.d) / float(M_CARRIER.d_out_e),
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        lg.neuron_spike_amplitude_in_ehb,
+        M_CARRIER.s_0,
+        abs_tol=1e-12,
+    )
+    assert lg.chromatic_semitones == lg.diatonic_steps + lg.pentatonic_steps
+    assert lg.pythagorean_comma_ratio > 1.0
+
 
 
 

@@ -37,6 +37,7 @@ from .m_chemistry import (
     MFccGraphDiracSpectrum,
     MCuboctahedralApertureAndGasDynamics,
     MAllometryAtpAndKineticsInvariants,
+    MLocalGatesSolidStateNeuroAndPhotoInvariants,
     m_cuboctahedral_subshells,
     m_ionization_ratio_be_h,
     m_ionization_energy_e0,
@@ -53,6 +54,7 @@ from .m_chemistry import (
     m_solve_fcc_graph_dirac_spectrum,
     m_compute_cuboctahedral_aperture_and_gas_invariants,
     m_compute_allometry_atp_and_kinetics_invariants,
+    m_compute_local_gates_solid_neuro_photo_invariants,
 )
 from .m_nucleic import (
     M_FRONTAL_TRACKS,

@@ -624,4 +624,105 @@ def m_compute_allometry_atp_and_kinetics_invariants(
     )
 
 
+@dataclass(frozen=True)
+class MLocalGatesSolidStateNeuroAndPhotoInvariants:
+    """Dimensionless M-layer invariants of local Heisenberg/Pauli gates, Cauchy solid-state, FQHE, Hodgkin-Huxley, photosynthesis, and acoustics."""
+
+    # 1. Strictly local Heisenberg-Newton gate (|Phi| < 41 -> 0) and local Pauli gate (Phi_Pauli = 256 -> Z_next = -Z_past)
+    heisenberg_threshold_ticks: int  # Delta_phi_disc = 41
+    heisenberg_deadband_states: int  # 2 * Delta_phi_disc - 1 = 81 = d^4 = 3^4 (non-injective inertial deadband)
+    heisenberg_active_ring_states: int  # N_ring - 81 = 431
+    pauli_impulse_ticks: int  # Phi_Pauli = N_ring // 2 = 256 (exact half-ring -> dZ = -2*Z_curr, phase-reversal mirror)
+    s1_pauli_lightcone_delay_ticks: int  # d - 1 = 2 ticks before disjoint S_1 parallel spinors collide at x_0
+
+    # 2. Solid-state elasticity (Cauchy central-force FCC N12), Dulong-Petit / Debye, and Laughlin-Jain FQHE
+    cauchy_poisson_ratio: float  # d_in(V) / d_in(sq) = 1 / 4 = 0.25
+    cauchy_shear_to_bulk_ratio: float  # d / d_out(E) = 3 / 5 = 0.60
+    cauchy_young_to_shear_ratio: float  # d_out(E) / d_in(E) = 5 / 2 = 2.50
+    dulong_petit_cv_over_nk: int  # d = 3 (|square| = 6 half-degrees of freedom)
+    debye_low_t_power: int  # d = 3 (C_V ~ T^3)
+    fqhe_laughlin_jain_fractions: tuple[float, float, float]  # (1/d, 2/d_out(E), d/d_out(V)) = (1/3, 2/5, 3/7)
+
+    # 3. Neurophysiology (Hodgkin-Huxley action potential in E_HB / e quanta)
+    nak_pump_na_out_per_atp: int  # d = 3
+    nak_pump_k_in_per_atp: int  # d - 1 = 2
+    neuron_v_rest_in_ehb: float  # -1 / d = -1 / 3 E_HB (~ -71.99 mV)
+    neuron_v_thresh_in_ehb: float  # -1 / d_in(sq) = -1 / 4 E_HB (~ -53.99 mV)
+    neuron_v_peak_in_ehb: float  # +1 / |square| = +1 / 6 E_HB (~ +35.99 mV)
+    neuron_spike_amplitude_in_ehb: float  # 1/d + 1/|square| = 1/2 = s_0 E_HB (~ 107.98 mV)
+
+    # 4. Quantum optics of photosynthesis & vision (in E_HB quanta) and 12-tone acoustic harmony
+    photosynthesis_quanta_ladder: tuple[float, float, float, float, float]  # (8, 8.5, 9, 10, 13) E_HB
+    oec_mn_cluster_ions: int  # d_in(sq) = 4 (Mn_4CaO_5 cluster)
+    oec_kok_cycle_states: int  # d_out(E) = 5 (S_0..S_4)
+    z_scheme_photons_per_o2: int  # N_hier = 8
+    chromatic_semitones: int  # |N_12| = 12
+    diatonic_steps: int  # d_out(V) = 7
+    pentatonic_steps: int  # d_out(E) = 5
+    pythagorean_comma_ratio: float  # (3/2)^12 / 2^7 = 531441 / 524288 ~ 1.013643
+
+
+def m_compute_local_gates_solid_neuro_photo_invariants(
+    c: MCarrierConstants = M_CARRIER,
+) -> MLocalGatesSolidStateNeuroAndPhotoInvariants:
+    """Derive local Heisenberg/Pauli gate invariants, Cauchy elasticity, FQHE, Hodgkin-Huxley spike, photosynthesis, and 12=7+5 harmony."""
+    d_pol = c.d - c.d_in_v  # 2
+    deadband = d_pol * c.delta_phi_disc - c.d_in_v  # 2 * 41 - 1 = 81 = 3^4
+    active_ring = c.n_ring - deadband  # 512 - 81 = 431
+
+    nu_cauchy = float(c.d_in_v) / float(c.d_in_sq)  # 1/4
+    g_over_k = float(c.d) / float(c.d_out_e)  # 3/5
+    e_over_g = float(c.d_out_e) / float(c.d_in_e)  # 5/2
+    fqhe = (
+        float(c.d_in_v) / float(c.d),
+        float(d_pol) / float(c.d_out_e),
+        float(c.d) / float(c.d_out_v),
+    )  # (1/3, 2/5, 3/7)
+
+    v_rest = -float(c.d_in_v) / float(c.d)  # -1/3
+    v_thresh = -float(c.d_in_v) / float(c.d_in_sq)  # -1/4
+    v_peak = float(c.d_in_v) / float(c.n_squares)  # +1/6
+    v_spike = v_peak - v_rest  # 1/6 + 1/3 = 1/2 = s_0
+
+    photo_quanta = (
+        float(c.n_hier),
+        float(c.n_hier) + c.s_0,
+        float(c.mod_bits),
+        float(c.n_12 - d_pol),
+        float(c.n_phi),
+    )  # (8.0, 8.5, 9.0, 10.0, 13.0)
+
+    fifth = float(c.d) / float(d_pol)  # 3/2
+    pyth_comma = (fifth ** c.n_12) / float(1 << c.d_out_v)  # (3/2)^12 / 2^7
+
+    return MLocalGatesSolidStateNeuroAndPhotoInvariants(
+        heisenberg_threshold_ticks=c.delta_phi_disc,
+        heisenberg_deadband_states=deadband,
+        heisenberg_active_ring_states=active_ring,
+        pauli_impulse_ticks=c.phi_pauli,
+        s1_pauli_lightcone_delay_ticks=d_pol,
+        cauchy_poisson_ratio=nu_cauchy,
+        cauchy_shear_to_bulk_ratio=g_over_k,
+        cauchy_young_to_shear_ratio=e_over_g,
+        dulong_petit_cv_over_nk=c.d,
+        debye_low_t_power=c.d,
+        fqhe_laughlin_jain_fractions=fqhe,
+        nak_pump_na_out_per_atp=c.d,
+        nak_pump_k_in_per_atp=d_pol,
+        neuron_v_rest_in_ehb=v_rest,
+        neuron_v_thresh_in_ehb=v_thresh,
+        neuron_v_peak_in_ehb=v_peak,
+        neuron_spike_amplitude_in_ehb=v_spike,
+        photosynthesis_quanta_ladder=photo_quanta,
+        oec_mn_cluster_ions=c.d_in_sq,
+        oec_kok_cycle_states=c.d_out_e,
+        z_scheme_photons_per_o2=c.n_hier,
+        chromatic_semitones=c.n_12,
+        diatonic_steps=c.d_out_v,
+        pentatonic_steps=c.d_out_e,
+        pythagorean_comma_ratio=pyth_comma,
+    )
+
+
+
 
