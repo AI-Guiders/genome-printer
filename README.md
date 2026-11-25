@@ -19,8 +19,8 @@ Parameter-free cellular-automaton genome interpreter, $O(1)$-per-residue polypep
 2. **Laboratory Readout Projector $\mathcal{B}\colon \mathcal{M} \leftrightarrow \mathcal{T}$ (`t_readout.py`):**
    - The sole module containing human IUPAC symbols (`T/U, C, A, G`, 20 amino acid letters), SI calibration anchors (`Å`, `eV`, `kJ/mol`, `K`), and X-Ray report tables.
 
-## Verification
+## Verification (auto-bootstraps `.venv` on a fresh clone)
 
 ```bash
-python verify_genome_printer.py
+python3 verify_genome_printer.py
 ```
